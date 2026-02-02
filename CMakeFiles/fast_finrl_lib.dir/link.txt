@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfast_finrl_lib.a CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o
+/usr/bin/ranlib libfast_finrl_lib.a

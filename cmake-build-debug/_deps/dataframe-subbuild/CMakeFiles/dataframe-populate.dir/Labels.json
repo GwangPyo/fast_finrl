@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/CMakeFiles/dataframe-populate"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/CMakeFiles/dataframe-populate.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/CMakeFiles/dataframe-populate-complete.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-build.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-configure.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-download.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-install.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-patch.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-test.rule"
+		},
+		{
+			"file" : "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/_deps/dataframe-subbuild/dataframe-populate-prefix/src/dataframe-populate-stamp/dataframe-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"dataframe-populate"
+		],
+		"name" : "dataframe-populate"
+	}
+}

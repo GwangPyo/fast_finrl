@@ -1,0 +1,5 @@
+if(EXISTS "C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/fast_finrl_tests[1]_tests.cmake")
+  include("C:/Users/necro/CLionProjects/fast_finrl/cmake-build-debug/fast_finrl_tests[1]_tests.cmake")
+else()
+  add_test(fast_finrl_tests_NOT_BUILT fast_finrl_tests_NOT_BUILT)
+endif()
