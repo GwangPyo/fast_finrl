@@ -23,7 +23,7 @@ pip install -e .
 ## Quick Start
 
 ```python
-from fast_finrl_py import FastFinRL, FastFinRLConfig
+from fast_finrl_py import FastFinRL
 
 # Create environment
 env = FastFinRL("data/stock_data.csv")
@@ -43,28 +43,44 @@ while not state["done"] and not state["terminal"]:
 
 ## Configuration
 
+All parameters are passed directly as keyword arguments:
+
 ```python
-from fast_finrl_py import FastFinRL, FastFinRLConfig
+from fast_finrl_py import FastFinRL
 
-config = FastFinRLConfig()
-config.initial_amount = 30000.0      # Starting cash
-config.hmax = 15                      # Max shares per trade
-config.buy_cost_pct = 0.01           # 1% buy fee
-config.sell_cost_pct = 0.01          # 1% sell fee
-config.stop_loss_tolerance = 0.8     # Stop-loss at 20% loss
-config.bidding = "deterministic"     # Price execution policy
-
-env = FastFinRL("data/stock_data.csv", config)
+env = FastFinRL(
+    "data/stock_data.csv",
+    initial_amount=100000.0,
+    hmax=30,
+    buy_cost_pct=0.001,
+    sell_cost_pct=0.001,
+    stop_loss_tolerance=0.85,
+    bidding="uniform",
+    initial_seed=42
+)
 ```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `csv_path` | (required) | Path to CSV file with stock data |
+| `initial_amount` | 30000.0 | Starting cash amount |
+| `hmax` | 15 | Maximum shares per trade (action * hmax) |
+| `buy_cost_pct` | 0.01 | Buy transaction fee (1% = 0.01) |
+| `sell_cost_pct` | 0.01 | Sell transaction fee (1% = 0.01) |
+| `stop_loss_tolerance` | 0.8 | Stop-loss threshold (0.8 = sell at 20% loss) |
+| `bidding` | "default" | Price execution policy (see below) |
+| `stop_loss_calculation` | "close" | Stop-loss price reference: "close" or "low" |
+| `initial_seed` | 0 | Initial random seed |
 
 ### Bidding Policies
 
-| Policy | Description |
-|--------|-------------|
-| `deterministic` | Execute at close price |
-| `default` | Execute at close price |
-| `uniform` | Random price between low and high |
-| `adv_uniform` | Adversarial: worst price for the agent |
+| Policy | Buy Price | Sell Price |
+|--------|-----------|------------|
+| `default` | close | close |
+| `uniform` | random(low, high) | random(low, high) |
+| `adv_uniform` | random(max(open,close), high) | random(low, min(open,close)) |
 
 ## API Reference
 

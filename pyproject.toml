@@ -32,12 +32,35 @@ Homepage = "https://github.com/yourusername/fast_finrl"
 Repository = "https://github.com/yourusername/fast_finrl"
 
 [tool.scikit-build]
-cmake.minimum-version = "3.14"
+cmake.version = ">=3.14"
 cmake.build-type = "Release"
 wheel.packages = []
 build-dir = "build/{wheel_tag}"
 
 [tool.scikit-build.cmake.define]
 CMAKE_BUILD_TYPE = "Release"
-CMAKE_CXX_COMPILER = "/usr/bin/g++-13"
-CMAKE_C_COMPILER = "/usr/bin/gcc-13"
+
+[tool.cibuildwheel]
+# Skip PyPy and musllinux (no TBB support)
+skip = ["pp*", "*-musllinux_*"]
+
+# Test the built wheels
+test-command = "python -c \"from fast_finrl_py import FastFinRL; print('Import OK')\""
+
+[tool.cibuildwheel.linux]
+# Install TBB before building
+before-all = "yum install -y tbb-devel || apt-get update && apt-get install -y libtbb-dev"
+# Use manylinux2014 for C++17/23 support
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.macos]
+# Install TBB via Homebrew
+before-all = "brew install tbb"
+# Build for both Intel and Apple Silicon
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+# Install TBB via vcpkg
+before-all = "vcpkg install tbb:x64-windows"
+environment = { CMAKE_TOOLCHAIN_FILE = "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" }

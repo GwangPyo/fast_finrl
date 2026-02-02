@@ -36,63 +36,8 @@ py::object json_to_python(const nlohmann::json& j) {
 PYBIND11_MODULE(fast_finrl_py, m) {
     m.doc() = "FastFinRL - High-performance C++ implementation of FinRL StockTradingEnv";
 
-    // Expose FastFinRLConfig struct
-    py::class_<fast_finrl::FastFinRLConfig>(m, "FastFinRLConfig")
-        .def(py::init<>())
-        .def(py::init([](double initial_amount,
-                         int hmax,
-                         double buy_cost_pct,
-                         double sell_cost_pct,
-                         double stop_loss_tolerance,
-                         const std::string& bidding,
-                         const std::string& stop_loss_calculation,
-                         int initial_seed) {
-            fast_finrl::FastFinRLConfig config;
-            config.initial_amount = initial_amount;
-            config.hmax = hmax;
-            config.buy_cost_pct = buy_cost_pct;
-            config.sell_cost_pct = sell_cost_pct;
-            config.stop_loss_tolerance = stop_loss_tolerance;
-            config.bidding = bidding;
-            config.stop_loss_calculation = stop_loss_calculation;
-            config.initial_seed = initial_seed;
-            return config;
-        }),
-             py::arg("initial_amount") = 30000.0,
-             py::arg("hmax") = 15,
-             py::arg("buy_cost_pct") = 0.01,
-             py::arg("sell_cost_pct") = 0.01,
-             py::arg("stop_loss_tolerance") = 0.8,
-             py::arg("bidding") = "default",
-             py::arg("stop_loss_calculation") = "close",
-             py::arg("initial_seed") = 0)
-        .def_readwrite("initial_amount", &fast_finrl::FastFinRLConfig::initial_amount)
-        .def_readwrite("hmax", &fast_finrl::FastFinRLConfig::hmax)
-        .def_readwrite("buy_cost_pct", &fast_finrl::FastFinRLConfig::buy_cost_pct)
-        .def_readwrite("sell_cost_pct", &fast_finrl::FastFinRLConfig::sell_cost_pct)
-        .def_readwrite("stop_loss_tolerance", &fast_finrl::FastFinRLConfig::stop_loss_tolerance)
-        .def_readwrite("bidding", &fast_finrl::FastFinRLConfig::bidding)
-        .def_readwrite("stop_loss_calculation", &fast_finrl::FastFinRLConfig::stop_loss_calculation)
-        .def_readwrite("initial_seed", &fast_finrl::FastFinRLConfig::initial_seed)
-        .def("__repr__", [](const fast_finrl::FastFinRLConfig& c) {
-            return "FastFinRLConfig(initial_amount=" + std::to_string(c.initial_amount) +
-                   ", hmax=" + std::to_string(c.hmax) +
-                   ", buy_cost_pct=" + std::to_string(c.buy_cost_pct) +
-                   ", sell_cost_pct=" + std::to_string(c.sell_cost_pct) +
-                   ", stop_loss_tolerance=" + std::to_string(c.stop_loss_tolerance) +
-                   ", bidding='" + c.bidding +
-                   "', stop_loss_calculation='" + c.stop_loss_calculation +
-                   "', initial_seed=" + std::to_string(c.initial_seed) + ")";
-        });
-
     py::class_<fast_finrl::FastFinRL>(m, "FastFinRL")
-        // Constructor with config
-        .def(py::init<const std::string&, const fast_finrl::FastFinRLConfig&>(),
-             py::arg("csv_path"),
-             py::arg("config") = fast_finrl::FastFinRLConfig{},
-             "Create FastFinRL environment from CSV file with configuration")
-
-        // Convenience constructor with keyword arguments
+        // Constructor with keyword arguments only
         .def(py::init([](const std::string& csv_path,
                          double initial_amount,
                          int hmax,
