@@ -1,213 +1,170 @@
 # FastFinRL
 
-High-performance C++ reimplementation of Python FinRL's StockTradingEnv for reinforcement learning-based trading.
+High-performance stock trading environment for reinforcement learning. A drop-in replacement for [FinRL](https://github.com/AI4Finance-Foundation/FinRL)'s StockTradingEnv with **~500x speedup**.
 
-## Features
+## Installation
 
-- **DataFrame-based data handling** using [hosseinmoein/DataFrame](https://github.com/hosseinmoein/DataFrame)
-- **JSON state representation** via [nlohmann/json](https://github.com/nlohmann/json)
-- **Dynamic indicator extraction** - automatically detects technical indicators from CSV columns
-- **Reproducible episodes** with seed management and auto-increment
-- **Multi-ticker support** - trade multiple assets simultaneously
-- **Stop-loss mechanism** with configurable tolerance
-- **Flexible bidding options** - default, uniform, or advanced uniform pricing
-
-## Requirements
-
-- C++23 compiler (GCC 13+ recommended)
-- CMake 3.14+
+### Requirements
+- Python 3.8+
+- GCC 13+ (for C++23 `<format>` support)
 - TBB (Threading Building Blocks)
+- CMake 3.14+
 
-## Build
-
+### Install via pip
 ```bash
-mkdir build && cd build
-cmake ..
-cmake --build .
+pip install .
+```
+
+Or for development:
+```bash
+pip install -e .
 ```
 
 ## Quick Start
 
-```cpp
-#include "FastFinRL.hpp"
+```python
+from fast_finrl_py import FastFinRL, FastFinRLConfig
 
-int main() {
-    // Create environment
-    fast_finrl::FastFinRL env("data/raw_train_df.csv");
+# Create environment
+env = FastFinRL("data/stock_data.csv")
 
-    // Reset with tickers and seed
-    auto state = env.reset({"SPY", "QQQ", "GLD"}, 42);
+# Reset with tickers and seed
+state = env.reset(["AAPL", "MSFT", "GOOGL"], seed=42)
 
-    // Trading loop
-    while (!state["done"].get<bool>()) {
-        // Actions: positive = buy, negative = sell, 0 = hold
-        // Range: [-1.0, 1.0], scaled by hmax internally
-        std::vector<double> actions = {0.5, -0.3, 0.0};
-        state = env.step(actions);
+# Training loop
+while not state["done"] and not state["terminal"]:
+    # Actions: [-1, 1] range, positive=buy, negative=sell, 0=hold
+    actions = [0.5, -0.3, 0.0]
+    state = env.step(actions)
 
-        double reward = state["reward"].get<double>();
-        double total_asset = state["portfolio"]["total_asset"].get<double>();
-    }
-
-    return 0;
-}
+    reward = state["reward"]
+    total_asset = state["portfolio"]["total_asset"]
 ```
 
-## API
+## Configuration
 
-### Constructor
+```python
+from fast_finrl_py import FastFinRL, FastFinRLConfig
 
-```cpp
-explicit FastFinRL(const std::string& csv_path);
+config = FastFinRLConfig()
+config.initial_amount = 30000.0      # Starting cash
+config.hmax = 15                      # Max shares per trade
+config.buy_cost_pct = 0.01           # 1% buy fee
+config.sell_cost_pct = 0.01          # 1% sell fee
+config.stop_loss_tolerance = 0.8     # Stop-loss at 20% loss
+config.bidding = "deterministic"     # Price execution policy
+
+env = FastFinRL("data/stock_data.csv", config)
 ```
 
-### Configuration (Public Attributes)
+### Bidding Policies
 
-```cpp
-double initial_amount;          // Default: 30000.0
-int hmax;                       // Default: 15
-double buy_cost_pct;            // Default: 0.01 (1%)
-double sell_cost_pct;           // Default: 0.01 (1%)
-double stop_loss_tolerance;     // Default: 0.8 (20% loss)
-std::string bidding;            // "default", "uniform", "adv_uniform"
-std::string stop_loss_calculation; // "close" or "low"
-```
+| Policy | Description |
+|--------|-------------|
+| `deterministic` | Execute at close price |
+| `default` | Execute at close price |
+| `uniform` | Random price between low and high |
+| `adv_uniform` | Adversarial: worst price for the agent |
 
-Example:
-```cpp
-FastFinRL env("data.csv");
-env.initial_amount = 50000;
-env.hmax = 20;
-env.stop_loss_tolerance = 0.9;
-```
+## API Reference
 
-### reset()
+### `reset(ticker_list, seed) -> dict`
 
-```cpp
-nlohmann::json reset(const std::vector<std::string>& ticker_list, int seed);
-```
+Reset environment with given tickers.
 
-- `seed >= 0`: Use specified seed
-- `seed == -1`: Auto-increment from previous seed
+- `ticker_list`: List of ticker symbols to trade
+- `seed`: Random seed (`-1` for auto-increment from previous seed)
 
-**Returns:**
-```json
+Returns state dict:
+```python
 {
-  "day": 427,
-  "date": "2021-01-08",
-  "seed": 42,
-  "done": false,
-  "terminal": false,
-  "portfolio": {
-    "cash": 30000.0,
-    "holdings": {
-      "SPY": {"shares": 0, "avg_buy_price": 0.0}
+    "day": 42,
+    "date": "2023-05-15",
+    "seed": 42,
+    "done": False,
+    "terminal": False,
+    "portfolio": {
+        "cash": 30000.0,
+        "holdings": {
+            "AAPL": {"shares": 0, "avg_buy_price": 0.0}
+        }
+    },
+    "market": {
+        "AAPL": {
+            "open": 150.0,
+            "high": 152.0,
+            "low": 149.0,
+            "close": 151.0,
+            "indicators": {"macd": 0.5, "rsi_14": 50.1, ...}
+        }
     }
-  },
-  "market": {
-    "SPY": {
-      "open": 355.27,
-      "high": 356.11,
-      "low": 352.01,
-      "close": 355.90,
-      "indicators": {"rsi_7": 74.5, "macd": 3.67, ...}
-    }
-  }
 }
 ```
 
-### step()
+### `step(actions) -> dict`
 
-```cpp
-nlohmann::json step(const std::vector<double>& actions);
-```
+Execute one trading step.
 
-- Actions range: `[-1.0, 1.0]`
-- Positive = buy, Negative = sell, Zero = hold
-- Internally scaled by `hmax`
+- `actions`: List of floats in `[-1, 1]` range (one per ticker)
+  - Positive = buy, Negative = sell, Zero = hold
+  - Scaled by `hmax` internally
 
-**Returns:** Same as reset() plus:
-```json
+Returns state dict with additional fields:
+```python
 {
-  "reward": 0.00517,
-  "info": {
-    "loss_cut_amount": 0.0,
-    "n_trades": 2,
-    "num_stop_loss": 0
-  }
+    ...,
+    "reward": 0.0023,  # log(end_asset / begin_asset)
+    "portfolio": {
+        ...,
+        "total_asset": 30500.0
+    },
+    "debug": {
+        "AAPL": {"fill_price": 150.5, "cost": 15.05, "quantity": 10}
+    },
+    "info": {
+        "n_trades": 1,
+        "num_stop_loss": 0,
+        "loss_cut_amount": 0.0
+    }
 }
 ```
 
-### Utility Methods
+### Properties
 
-```cpp
-std::set<std::string> get_indicator_names() const;  // Get detected indicators
-nlohmann::json get_state() const;                    // Get current state
-double get_raw_value(const std::string& ticker, int day, const std::string& column) const;
+```python
+env.get_indicator_names()  # Set of technical indicator names
+env.get_state()            # Current state dict
+env.get_raw_value(ticker, day, column)  # Raw DataFrame value
 ```
 
-## CSV Format
+## Data Format
 
-Required columns:
-- `date` - Date string (used for day ranking)
-- `tic` - Ticker symbol
-- `open`, `high`, `low`, `close` - Price data
-- `volume` - Trading volume
+CSV file with columns:
 
-All other columns are treated as technical indicators.
+| Column | Type | Required |
+|--------|------|----------|
+| day | int | Yes |
+| date | string | Yes |
+| tic | string | Yes |
+| open, high, low, close | float | Yes |
+| volume | float | Yes |
+| *(any other columns)* | float | Auto-detected as indicators |
 
 Example:
 ```csv
-date,close,high,low,open,volume,tic,macd,rsi_7,rsi_14
-2019-05-01,355.90,356.11,352.01,355.27,12331800,SPY,3.67,74.5,68.2
-2019-05-01,181.14,183.43,181.02,182.92,34797100,QQQ,2.96,62.7,69.3
+day,date,tic,open,high,low,close,volume,macd,rsi_14
+0,2023-01-01,AAPL,150.0,152.0,149.0,151.0,1000000,0.5,50.1
+0,2023-01-01,MSFT,250.0,255.0,248.0,252.0,800000,0.3,48.5
 ```
 
-## Testing
+## Performance
 
-```bash
-cd build
-ctest --output-on-failure
-```
-
-15 tests covering:
-- DataFrame loading and indicator extraction
-- Reset with seed reproducibility
-- Seed auto-increment
-- Buy/sell operations
-- Stop-loss mechanism
-- Terminal conditions
-- Multi-ticker trading
-- Reward calculation
-
-## Project Structure
-
-```
-fast_finrl/
-├── CMakeLists.txt
-├── README.md
-├── CLAUDE.md              # Development specification
-├── include/
-│   └── FastFinRL.hpp      # Header file
-├── src/
-│   └── FastFinRL.cpp      # Implementation
-├── tests/
-│   └── test_fast_finrl.cpp
-├── data/
-│   └── raw_train_df.csv   # Training data
-└── main.cpp               # Demo application
-```
-
-## Dependencies
-
-Automatically fetched via CMake FetchContent:
-- [hosseinmoein/DataFrame](https://github.com/hosseinmoein/DataFrame) - C++ DataFrame library
-- [nlohmann/json](https://github.com/nlohmann/json) - JSON for Modern C++
-- [GoogleTest](https://github.com/google/googletest) - Testing framework
-
-System dependency:
-- TBB (Intel Threading Building Blocks)
+| Tickers | Step Time |
+|---------|-----------|
+| 4       | 0.03ms    |
+| 9       | 0.07ms    |
+| 37      | 0.19ms    |
 
 ## License
 
-MIT License
+MIT

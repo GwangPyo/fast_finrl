@@ -1,0 +1,43 @@
+[build-system]
+requires = ["scikit-build-core>=0.5", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fast-finrl"
+version = "0.1.0"
+description = "High-performance C++ implementation of FinRL StockTradingEnv"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "FastFinRL Contributors"}
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["reinforcement-learning", "trading", "finrl", "finance"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/fast_finrl"
+Repository = "https://github.com/yourusername/fast_finrl"
+
+[tool.scikit-build]
+cmake.minimum-version = "3.14"
+cmake.build-type = "Release"
+wheel.packages = []
+build-dir = "build/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+CMAKE_BUILD_TYPE = "Release"
+CMAKE_CXX_COMPILER = "/usr/bin/g++-13"
+CMAKE_C_COMPILER = "/usr/bin/gcc-13"

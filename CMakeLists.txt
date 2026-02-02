@@ -77,3 +77,6 @@ gtest_discover_tests(fast_finrl_tests)
 # Python bindings
 pybind11_add_module(fast_finrl_py src/bindings.cpp)
 target_link_libraries(fast_finrl_py PRIVATE fast_finrl_lib)
+
+# Install Python module (for pip install)
+install(TARGETS fast_finrl_py LIBRARY DESTINATION .)
