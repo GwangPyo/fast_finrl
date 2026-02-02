@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <cstdint>
 #include "FastFinRL.hpp"
 
 namespace py = pybind11;
@@ -46,7 +47,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          double stop_loss_tolerance,
                          const std::string& bidding,
                          const std::string& stop_loss_calculation,
-                         int initial_seed) {
+                         int64_t initial_seed,
+                         const std::vector<std::string>& tech_indicator_list) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
             config.hmax = hmax;
@@ -56,6 +58,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.bidding = bidding;
             config.stop_loss_calculation = stop_loss_calculation;
             config.initial_seed = initial_seed;
+            config.tech_indicator_list = tech_indicator_list;
             return std::make_unique<fast_finrl::FastFinRL>(csv_path, config);
         }),
              py::arg("csv_path"),
@@ -67,6 +70,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("bidding") = "default",
              py::arg("stop_loss_calculation") = "close",
              py::arg("initial_seed") = 0,
+             py::arg("tech_indicator_list") = std::vector<std::string>{},
              "Create FastFinRL environment with keyword arguments")
 
         // Public attributes (read-write)
@@ -88,7 +92,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Core API methods
         .def("reset", [](fast_finrl::FastFinRL& self,
                          const std::vector<std::string>& ticker_list,
-                         int seed) {
+                         int64_t seed) {
             return json_to_python(self.reset(ticker_list, seed));
         }, py::arg("ticker_list"), py::arg("seed"),
            "Reset environment with given tickers and seed. Returns state dict.")

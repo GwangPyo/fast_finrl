@@ -24,7 +24,8 @@ struct FastFinRLConfig {
     double stop_loss_tolerance = 0.8;
     string bidding = "default";
     string stop_loss_calculation = "close";
-    int initial_seed = 0;
+    int64_t initial_seed = 0;
+    vector<string> tech_indicator_list = {};  // empty = auto-detect from CSV
 };
 
 // Forward declaration
@@ -63,7 +64,7 @@ public:
     explicit FastFinRL(const string& csv_path, const FastFinRLConfig& config = FastFinRLConfig{});
 
     // Core API
-    nlohmann::json reset(const vector<string>& ticker_list, int seed);
+    nlohmann::json reset(const vector<string>& ticker_list, int64_t seed);
     nlohmann::json step(const vector<double>& actions);
 
     // Accessors
@@ -79,6 +80,7 @@ private:
     set<string> excluded_columns_;
     set<string> indicator_names_;
     set<string> all_tickers_;
+    vector<string> tech_indicator_list_;  // user-specified indicators (empty = auto)
 
     // Pre-computed index: (ticker, day) -> row_index for O(1) lookup
     map<pair<string, int>, size_t> row_index_map_;
@@ -107,7 +109,7 @@ private:
     vector<size_t> active_row_indices_;
 
     // State variables
-    int current_seed_ = 0;
+    int64_t current_seed_ = 0;
     mt19937 rng_;
     int day_ = 0;
     int max_day_ = 0;

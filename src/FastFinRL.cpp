@@ -31,6 +31,7 @@ FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     , stop_loss_calculation(config.stop_loss_calculation)
     , current_seed_(config.initial_seed)
     , rng_(config.initial_seed)
+    , tech_indicator_list_(config.tech_indicator_list)
     , json_handler_(make_unique<JsonHandler>(*this))
 {
     excluded_columns_ = {"day", "date", "tic", "open", "high", "low", "close", "volume", "start"};
@@ -202,17 +203,22 @@ void FastFinRL::extract_indicator_names() {
     indicator_names_.clear();
     indicator_cols_.clear();
 
-    // Get column information from DataFrame
-    // Returns vector of tuple<FixedSizeString, size_t, type_index>
-    auto col_info = df_.get_columns_info<int, double, string, long, unsigned long>();
-
-    for (const auto& [col_name, col_size, col_type] : col_info) {
-        string name(col_name.c_str());
-        // Skip excluded columns
-        if (excluded_columns_.find(name) == excluded_columns_.end()) {
+    if (!tech_indicator_list_.empty()) {
+        // Use user-specified indicator list
+        for (const auto& name : tech_indicator_list_) {
             indicator_names_.insert(name);
-            // Cache column reference
             indicator_cols_.emplace_back(name, cref(df_.get_column<double>(name.c_str())));
+        }
+    } else {
+        // Auto-detect: all columns except excluded ones
+        auto col_info = df_.get_columns_info<int, double, string, long, unsigned long>();
+
+        for (const auto& [col_name, col_size, col_type] : col_info) {
+            string name(col_name.c_str());
+            if (excluded_columns_.find(name) == excluded_columns_.end()) {
+                indicator_names_.insert(name);
+                indicator_cols_.emplace_back(name, cref(df_.get_column<double>(name.c_str())));
+            }
         }
     }
 }
@@ -370,7 +376,7 @@ double FastFinRL::get_randomized_price(size_t ticker_idx, const string& option) 
     return get_price(ticker_idx, "close");
 }
 
-nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int seed) {
+nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed) {
     // 1. Seed handling
     if (seed == -1) {
         current_seed_++;
