@@ -1,6 +1,6 @@
 # FastFinRL
 
-High-performance stock trading environment for reinforcement learning. A drop-in replacement for [FinRL](https://github.com/AI4Finance-Foundation/FinRL)'s StockTradingEnv with **~500x speedup**.
+High-performance stock trading environment for reinforcement learning. A drop-in replacement for [FinRL](https://github.com/AI4Finance-Foundation/FinRL)'s StockTradingEnv with **speedup with C++**.
 
 ## Installation
 
