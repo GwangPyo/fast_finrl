@@ -8,7 +8,7 @@ High-performance stock trading environment for reinforcement learning. A drop-in
 - Python 3.8+
 - GCC 13+ (for C++23 `<format>` support)
 - TBB (Threading Building Blocks)
-- CMake 3.14+
+- CMake 3.22+
 
 ### Install via pip
 ```bash

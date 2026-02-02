@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.22)
 project(fast_finrl)
 
 set(CMAKE_CXX_STANDARD 23)
