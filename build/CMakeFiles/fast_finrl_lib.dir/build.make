@@ -73,15 +73,15 @@ CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o: CMakeFiles/fast_finrl_lib.dir
 CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o: ../src/FastFinRL.cpp
 CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -fopenmp -MD -MT CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp
 
 CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -fopenmp -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp > CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp > CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.i
 
 CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -fopenmp -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp -o CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp -o CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s
 
 # Object files for target fast_finrl_lib
 fast_finrl_lib_OBJECTS = \

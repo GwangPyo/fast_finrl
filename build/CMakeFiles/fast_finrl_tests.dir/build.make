@@ -96,8 +96,8 @@ fast_finrl_tests: libfast_finrl_lib.a
 fast_finrl_tests: lib/libgtest_main.a
 fast_finrl_tests: _deps/dataframe-build/libDataFrame.a
 fast_finrl_tests: /usr/lib/x86_64-linux-gnu/libtbb.so.12.5
-fast_finrl_tests: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
-fast_finrl_tests: /usr/lib/x86_64-linux-gnu/libpthread.a
+fast_finrl_tests: /usr/lib/x86_64-linux-gnu/libparquet.so.2300.0.0
+fast_finrl_tests: /usr/lib/x86_64-linux-gnu/libarrow.so.2300.0.0
 fast_finrl_tests: lib/libgtest.a
 fast_finrl_tests: CMakeFiles/fast_finrl_tests.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable fast_finrl_tests"

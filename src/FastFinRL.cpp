@@ -4,8 +4,17 @@
 #include <stdexcept>
 #include <fstream>
 #include <sstream>
+#include <future>
 #ifdef _OPENMP
 #include <omp.h>
+#endif
+
+#ifdef HAVE_PARQUET
+#include <arrow/api.h>
+#include <arrow/io/api.h>
+#include <parquet/arrow/reader.h>
+#include <parquet/file_reader.h>
+#include <parquet/properties.h>
 #endif
 
 // DataFrame selector macros for filtering by ticker and day
@@ -44,15 +53,16 @@ set<string> FastFinRL::get_indicator_names() const {
     return indicator_names_;
 }
 
-string FastFinRL::convert_csv_to_dataframe_format(const string& csv_path) {
+hmdf::ReadParams FastFinRL::build_csv2_schema(const string& csv_path) {
     ifstream infile(csv_path);
     if (!infile.is_open()) {
         throw runtime_error("Cannot open file: " + csv_path);
     }
 
-    // Read header line
+    // Read only the header line
     string header_line;
     getline(infile, header_line);
+    infile.close();
 
     // Parse column names
     vector<string> col_names;
@@ -62,68 +72,173 @@ string FastFinRL::convert_csv_to_dataframe_format(const string& csv_path) {
         col_names.push_back(col_name);
     }
 
-    // Determine column types: 'date' and 'tic' are strings, rest are numeric
-    vector<string> col_types;
-    for (const auto& name : col_names) {
-        if (name == "date" || name == "tic") {
-            col_types.push_back("string");
-        } else {
-            col_types.push_back("double");
-        }
-    }
+    // Build schema for csv2 format
+    hmdf::ReadParams params;
+    params.skip_first_line = true;  // Skip header row
 
-    // Read all data rows
-    vector<vector<string>> data(col_names.size());
-    string line;
-    size_t num_rows = 0;
-    while (getline(infile, line)) {
-        if (line.empty()) continue;
+    // First entry is always the index (ULONG)
+    hmdf::ReadSchema index_schema;
+    index_schema.col_name = hmdf::DF_INDEX_COL_NAME;
+    index_schema.col_type = hmdf::file_dtypes::ULONG;
+    index_schema.col_idx = 0;
+    params.schema.push_back(index_schema);
 
-        stringstream ss(line);
-        string value;
-        size_t col_idx = 0;
-        while (getline(ss, value, ',') && col_idx < col_names.size()) {
-            data[col_idx].push_back(value);
-            col_idx++;
-        }
-        num_rows++;
-    }
-    infile.close();
-
-    // Generate DataFrame format
-    stringstream output;
-
-    // First column is always the index (INDEX:num_rows:<ulong>:0,1,2,...)
-    output << "INDEX:" << num_rows << ":<ulong>:";
-    for (size_t i = 0; i < num_rows; ++i) {
-        output << i;
-        if (i < num_rows - 1) output << ",";
-    }
-    output << ",\n";
-
-    // Add each column
+    // Add schema for each column
     for (size_t i = 0; i < col_names.size(); ++i) {
-        output << col_names[i] << ":" << num_rows << ":<" << col_types[i] << ">:";
-        for (size_t j = 0; j < data[i].size(); ++j) {
-            output << data[i][j];
-            if (j < data[i].size() - 1) output << ",";
+        hmdf::ReadSchema col_schema;
+        col_schema.col_name = col_names[i].c_str();
+
+        // Determine type: 'date' and 'tic' are strings, rest are numeric
+        if (col_names[i] == "date" || col_names[i] == "tic") {
+            col_schema.col_type = hmdf::file_dtypes::STRING;
+        } else {
+            col_schema.col_type = hmdf::file_dtypes::DOUBLE;
         }
-        output << ",\n";
+        col_schema.col_idx = static_cast<int>(i + 1);  // +1 because index is at 0
+        params.schema.push_back(col_schema);
     }
 
-    // Write to temp file
-    string temp_path = csv_path + ".df";
-    ofstream outfile(temp_path);
-    outfile << output.str();
-    outfile.close();
-
-    return temp_path;
+    return params;
 }
 
-void FastFinRL::load_dataframe(const string& csv_path) {
-    // Convert standard CSV to DataFrame format and load
-    string df_path = convert_csv_to_dataframe_format(csv_path);
-    df_.read(df_path.c_str(), hmdf::io_format::csv);
+#ifdef HAVE_PARQUET
+namespace {
+    // Template to extract column data from Arrow chunked array
+    template<typename ArrowType, typename CppType>
+    vector<CppType> extract_column(const std::shared_ptr<arrow::ChunkedArray>& chunked, size_t num_rows) {
+        using ArrayType = typename arrow::TypeTraits<ArrowType>::ArrayType;
+        vector<CppType> col_data;
+        col_data.reserve(num_rows);
+        for (int c = 0; c < chunked->num_chunks(); ++c) {
+            auto array = std::static_pointer_cast<ArrayType>(chunked->chunk(c));
+            for (int64_t j = 0; j < array->length(); ++j) {
+                if constexpr (std::is_same_v<CppType, string>) {
+                    col_data.push_back(string(array->GetView(j)));
+                } else {
+                    col_data.push_back(static_cast<CppType>(array->Value(j)));
+                }
+            }
+        }
+        return col_data;
+    }
+
+    // Convert numeric to string
+    template<typename ArrowType>
+    vector<string> extract_as_string(const std::shared_ptr<arrow::ChunkedArray>& chunked, size_t num_rows) {
+        using ArrayType = typename arrow::TypeTraits<ArrowType>::ArrayType;
+        vector<string> col_data;
+        col_data.reserve(num_rows);
+        for (int c = 0; c < chunked->num_chunks(); ++c) {
+            auto array = std::static_pointer_cast<ArrayType>(chunked->chunk(c));
+            for (int64_t j = 0; j < array->length(); ++j) {
+                col_data.push_back(to_string(array->Value(j)));
+            }
+        }
+        return col_data;
+    }
+}
+
+void FastFinRL::load_from_parquet(const string& path) {
+    PARQUET_ASSIGN_OR_THROW(auto infile, arrow::io::ReadableFile::Open(path));
+
+    // Create ParquetFileReader first
+    auto parquet_reader = parquet::ParquetFileReader::Open(infile);
+
+    // Enable parallel column reading
+    parquet::ArrowReaderProperties props(true);  // use_threads = true
+    props.set_pre_buffer(true);  // Pre-buffer for better I/O
+
+    // Create FileReader with properties
+    PARQUET_ASSIGN_OR_THROW(auto reader,
+        parquet::arrow::FileReader::Make(arrow::default_memory_pool(), std::move(parquet_reader), props));
+    reader->set_use_threads(true);  // Enable parallel decoding
+
+    std::shared_ptr<arrow::Table> table;
+    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
+
+    size_t num_rows = table->num_rows();
+    int num_cols = table->num_columns();
+
+    // Create index
+    vector<unsigned long> index(num_rows);
+    for (size_t i = 0; i < num_rows; ++i) index[i] = i;
+    df_.load_index(move(index));
+
+    // Pre-extract column info
+    vector<string> col_names(num_cols);
+    vector<arrow::Type::type> col_types(num_cols);
+    for (int i = 0; i < num_cols; ++i) {
+        col_names[i] = table->field(i)->name();
+        col_types[i] = table->column(i)->type()->id();
+    }
+
+    // Extract columns in parallel using std::async
+    vector<vector<double>> double_cols(num_cols);
+    vector<vector<string>> string_cols(num_cols);
+    vector<bool> is_string_col(num_cols, false);
+    vector<std::future<void>> futures;
+    futures.reserve(num_cols);
+
+    for (int i = 0; i < num_cols; ++i) {
+        futures.push_back(std::async(std::launch::async, [&, i]() {
+            auto chunked = table->column(i);
+            auto type_id = col_types[i];
+            const auto& col_name = col_names[i];
+
+            if (col_name == "date" || col_name == "tic") {
+                is_string_col[i] = true;
+                if (type_id == arrow::Type::STRING) {
+                    string_cols[i] = extract_column<arrow::StringType, string>(chunked, num_rows);
+                } else if (type_id == arrow::Type::INT64) {
+                    string_cols[i] = extract_as_string<arrow::Int64Type>(chunked, num_rows);
+                }
+            } else {
+                if (type_id == arrow::Type::DOUBLE) {
+                    double_cols[i] = extract_column<arrow::DoubleType, double>(chunked, num_rows);
+                } else if (type_id == arrow::Type::INT64) {
+                    double_cols[i] = extract_column<arrow::Int64Type, double>(chunked, num_rows);
+                } else if (type_id == arrow::Type::FLOAT) {
+                    double_cols[i] = extract_column<arrow::FloatType, double>(chunked, num_rows);
+                }
+            }
+        }));
+    }
+
+    // Wait for all extractions to complete
+    for (auto& f : futures) f.get();
+
+    // Load columns into DataFrame (sequential - DataFrame not thread-safe)
+    for (int i = 0; i < num_cols; ++i) {
+        if (is_string_col[i]) {
+            df_.load_column(col_names[i].c_str(), move(string_cols[i]));
+        } else {
+            df_.load_column(col_names[i].c_str(), move(double_cols[i]));
+        }
+    }
+}
+#endif
+
+void FastFinRL::load_dataframe(const string& path) {
+    // Enable DataFrame's internal threading for parallel operations
+    hmdf::ThreadGranularity::set_optimum_thread_level();
+
+    // Check file extension
+    bool is_parquet = (path.size() >= 8 && path.substr(path.size() - 8) == ".parquet");
+
+#ifdef HAVE_PARQUET
+    if (is_parquet) {
+        load_from_parquet(path);
+    } else {
+        auto params = build_csv2_schema(path);
+        df_.read(path.c_str(), hmdf::io_format::csv2, params);
+    }
+#else
+    if (is_parquet) {
+        throw runtime_error("Parquet support not compiled. Rebuild with Arrow/Parquet installed.");
+    }
+    auto params = build_csv2_schema(path);
+    df_.read(path.c_str(), hmdf::io_format::csv2, params);
+#endif
 
     // Get all unique tickers using DataFrame library
     auto unique_tics = df_.get_col_unique_values<string>("tic");

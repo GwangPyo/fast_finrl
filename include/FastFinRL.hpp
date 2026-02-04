@@ -139,8 +139,11 @@ private:
     vector<TradeInfo> trade_info_;
 
     // Internal helpers
-    string convert_csv_to_dataframe_format(const string& csv_path);
-    void load_dataframe(const string& csv_path);
+    hmdf::ReadParams build_csv2_schema(const string& csv_path);
+    void load_dataframe(const string& path);
+#ifdef HAVE_PARQUET
+    void load_from_parquet(const string& path);
+#endif
     void extract_indicator_names();
     void setup_tickers(const vector<string>& tickers);
     void update_row_indices();

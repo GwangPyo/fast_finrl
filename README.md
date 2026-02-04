@@ -156,7 +156,4 @@ git clone https://github.com/GwangPyo/fast_finrl.git
 cd fast_finrl
 pip install .
 ```
-
-## License
-
-MIT
+ 

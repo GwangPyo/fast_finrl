@@ -566,4 +566,72 @@ CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o: \
  /mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/dataframe-src/include/DataFrame/Internals/DataFrame_sort.tcc \
  /mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/dataframe-src/include/DataFrame/Internals/DataFrame_visit.tcc \
  /mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/dataframe-src/include/DataFrame/Internals/DataFrame_write.tcc \
- /usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h
+ /usr/include/arrow/api.h /usr/include/arrow/array.h \
+ /usr/include/arrow/array/array_base.h /usr/include/arrow/array/data.h \
+ /usr/include/arrow/array/statistics.h /usr/include/arrow/compare.h \
+ /usr/include/arrow/util/macros.h /usr/include/arrow/util/visibility.h \
+ /usr/include/arrow/type.h /usr/include/arrow/result.h \
+ /usr/include/arrow/status.h /usr/include/arrow/util/compare.h \
+ /usr/include/arrow/util/string_util.h \
+ /usr/include/arrow/util/aligned_storage.h \
+ /usr/include/arrow/util/launder.h /usr/include/arrow/type_fwd.h \
+ /usr/include/arrow/util/checked_cast.h /usr/include/arrow/util/endian.h \
+ /usr/include/arrow/util/type_traits.h /usr/include/arrow/util/ubsan.h \
+ /usr/include/arrow/visitor.h /usr/include/arrow/buffer.h \
+ /usr/include/arrow/device.h /usr/include/arrow/io/type_fwd.h \
+ /usr/include/arrow/util/span.h /usr/include/arrow/util/bit_util.h \
+ /usr/include/arrow/array/array_binary.h \
+ /usr/include/arrow/stl_iterator.h /usr/include/arrow/chunked_array.h \
+ /usr/include/arrow/chunk_resolver.h \
+ /usr/include/arrow/device_allocation_type_set.h \
+ /usr/include/c++/13/bitset /usr/include/arrow/type_traits.h \
+ /usr/include/arrow/array/array_decimal.h \
+ /usr/include/arrow/array/array_dict.h \
+ /usr/include/arrow/array/array_nested.h \
+ /usr/include/arrow/array/array_primitive.h \
+ /usr/include/arrow/array/array_run_end.h /usr/include/arrow/array/util.h \
+ /usr/include/arrow/array/concatenate.h /usr/include/arrow/builder.h \
+ /usr/include/arrow/array/builder_adaptive.h \
+ /usr/include/arrow/array/builder_base.h \
+ /usr/include/arrow/buffer_builder.h \
+ /usr/include/arrow/util/bitmap_generate.h \
+ /usr/include/arrow/memory_pool.h /usr/include/arrow/util/bitmap_ops.h \
+ /usr/include/arrow/array/builder_binary.h \
+ /usr/include/arrow/util/binary_view_util.h \
+ /usr/include/arrow/array/builder_decimal.h \
+ /usr/include/arrow/array/builder_dict.h \
+ /usr/include/arrow/array/builder_primitive.h \
+ /usr/include/arrow/util/float16.h /usr/include/arrow/scalar.h \
+ /usr/include/arrow/extension_type.h /usr/include/arrow/util/decimal.h \
+ /usr/include/arrow/util/basic_decimal.h \
+ /usr/include/arrow/visit_type_inline.h \
+ /usr/include/arrow/util/unreachable.h \
+ /usr/include/arrow/visitor_generate.h \
+ /usr/include/arrow/util/bit_block_counter.h \
+ /usr/include/arrow/array/builder_nested.h \
+ /usr/include/arrow/array/builder_run_end.h \
+ /usr/include/arrow/array/builder_time.h \
+ /usr/include/arrow/array/builder_union.h /usr/include/arrow/config.h \
+ /usr/include/arrow/util/config.h /usr/include/arrow/datum.h \
+ /usr/include/arrow/pretty_print.h /usr/include/arrow/record_batch.h \
+ /usr/include/arrow/util/iterator.h /usr/include/arrow/util/functional.h \
+ /usr/include/arrow/util/type_fwd.h /usr/include/arrow/table.h \
+ /usr/include/arrow/table_builder.h /usr/include/arrow/tensor.h \
+ /usr/include/arrow/util/key_value_metadata.h \
+ /usr/include/arrow/visit_array_inline.h \
+ /usr/include/arrow/visit_scalar_inline.h /usr/include/arrow/io/api.h \
+ /usr/include/arrow/io/buffered.h /usr/include/arrow/io/concurrency.h \
+ /usr/include/arrow/io/interfaces.h /usr/include/arrow/util/cancel.h \
+ /usr/include/arrow/io/compressed.h /usr/include/arrow/io/file.h \
+ /usr/include/arrow/io/hdfs.h /usr/include/arrow/io/memory.h \
+ /usr/include/parquet/arrow/reader.h /usr/include/parquet/file_reader.h \
+ /usr/include/arrow/io/caching.h /usr/include/parquet/metadata.h \
+ /usr/include/parquet/encryption/type_fwd.h \
+ /usr/include/parquet/platform.h /usr/include/parquet/properties.h \
+ /usr/include/arrow/util/compression.h \
+ /usr/include/parquet/encryption/encryption.h \
+ /usr/include/arrow/util/secure_string.h /usr/include/parquet/exception.h \
+ /usr/include/parquet/schema.h /usr/include/parquet/types.h \
+ /usr/include/parquet/type_fwd.h /usr/include/parquet/windows_fixup.h \
+ /usr/include/arrow/util/windows_fixup.h \
+ /usr/include/parquet/parquet_version.h

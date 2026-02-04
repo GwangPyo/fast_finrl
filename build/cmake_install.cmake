@@ -62,6 +62,22 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/pybind11-build/cmake_install.cmake")
 endif()
 
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so")
+    file(RPATH_CHECK
+         FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so"
+         RPATH "")
+  endif()
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/." TYPE MODULE FILES "/mnt/c/Users/necro/CLionProjects/fast_finrl/build/fast_finrl_py.cpython-312-x86_64-linux-gnu.so")
+  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so")
+    if(CMAKE_INSTALL_DO_STRIP)
+      execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/./fast_finrl_py.cpython-312-x86_64-linux-gnu.so")
+    endif()
+  endif()
+endif()
+
 if(CMAKE_INSTALL_COMPONENT)
   set(CMAKE_INSTALL_MANIFEST "install_manifest_${CMAKE_INSTALL_COMPONENT}.txt")
 else()

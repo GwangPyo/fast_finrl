@@ -14,8 +14,29 @@
 # EXTERNAL cache entries
 ########################
 
+//The directory containing a CMake configuration file for Arrow.
+Arrow_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/Arrow
+
+//Path to a library.
+BROTLI_COMMON_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlicommon.so
+
+//Path to a library.
+BROTLI_DEC_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlidec.so
+
+//Path to a library.
+BROTLI_ENC_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlienc.so
+
 //Builds the googlemock subproject
 BUILD_GMOCK:BOOL=ON
+
+//Path to a file.
+BZIP2_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+BZIP2_LIBRARY_DEBUG:FILEPATH=BZIP2_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+BZIP2_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libbz2.so
 
 //Path to a program.
 CMAKE_ADDR2LINE:FILEPATH=/usr/bin/addr2line
@@ -25,7 +46,7 @@ CMAKE_AR:FILEPATH=/usr/bin/ar
 
 //Choose the type of build, options are: None Debug Release RelWithDebInfo
 // MinSizeRel ...
-CMAKE_BUILD_TYPE:STRING=
+CMAKE_BUILD_TYPE:STRING=Release
 
 //Enable/Disable color output during build.
 CMAKE_COLOR_MAKEFILE:BOOL=ON
@@ -188,6 +209,9 @@ CMAKE_OBJCOPY:FILEPATH=/usr/bin/objcopy
 
 //Path to a program.
 CMAKE_OBJDUMP:FILEPATH=/usr/bin/objdump
+
+//No help, variable specified on the command line.
+CMAKE_PREFIX_PATH:UNINITIALIZED=/usr/lib/x86_64-linux-gnu/cmake
 
 //Value Computed by CMake
 CMAKE_PROJECT_DESCRIPTION:STATIC=
@@ -375,23 +399,23 @@ JSON_MultipleHeaders:BOOL=ON
 //Include as system headers (skip for clang-tidy).
 JSON_SystemInclude:BOOL=OFF
 
-//CXX compiler flags for OpenMP parallelization
-OpenMP_CXX_FLAGS:STRING=-fopenmp
+//Path to a library.
+LZ4_LIB:FILEPATH=/usr/lib/x86_64-linux-gnu/liblz4.so
 
-//CXX compiler libraries for OpenMP parallelization
-OpenMP_CXX_LIB_NAMES:STRING=gomp;pthread
+//Path to a library.
+OPENSSL_CRYPTO_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
 
-//C compiler flags for OpenMP parallelization
-OpenMP_C_FLAGS:STRING=-fopenmp
+//Path to a file.
+OPENSSL_INCLUDE_DIR:PATH=/usr/include
 
-//C compiler libraries for OpenMP parallelization
-OpenMP_C_LIB_NAMES:STRING=gomp;pthread
+//Path to a library.
+OPENSSL_SSL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
 
-//Path to the gomp library for OpenMP
-OpenMP_gomp_LIBRARY:FILEPATH=/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
+//Arguments to supply to pkg-config
+PKG_CONFIG_ARGN:STRING=
 
-//Path to the pthread library for OpenMP
-OpenMP_pthread_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libpthread.a
+//pkg-config executable
+PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
 
 //Force new FindPython
 PYBIND11_FINDPYTHON:BOOL=OFF
@@ -425,8 +449,59 @@ PYTHON_EXECUTABLE:FILEPATH=/home/yoo/miniconda/bin/python
 //Path to a library.
 PYTHON_LIBRARY:FILEPATH=/home/yoo/miniconda/lib/libpython3.12.so
 
+//The directory containing a CMake configuration file for Parquet.
+Parquet_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/Parquet
+
+//Path to a file.
+Protobuf_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+Protobuf_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotobuf.so
+
+//Path to a library.
+Protobuf_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotobuf.so
+
+//Path to a library.
+Protobuf_LITE_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotobuf-lite.so
+
+//Path to a library.
+Protobuf_LITE_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotobuf-lite.so
+
+//The Google Protocol Buffers Compiler
+Protobuf_PROTOC_EXECUTABLE:FILEPATH=/usr/bin/protoc
+
+//Path to a library.
+Protobuf_PROTOC_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotoc.so
+
+//Path to a library.
+Protobuf_PROTOC_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libprotoc.so
+
+//Path to a library.
+RE2_LIB:FILEPATH=/usr/lib/x86_64-linux-gnu/libre2.so
+
+//The directory containing a CMake configuration file for Snappy.
+Snappy_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/Snappy
+
 //The directory containing a CMake configuration file for TBB.
 TBB_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/TBB
+
+//Path to a program.
+THRIFT_COMPILER:FILEPATH=THRIFT_COMPILER-NOTFOUND
+
+//Path to a library.
+ThriftAlt_LIB:FILEPATH=/usr/lib/x86_64-linux-gnu/libthrift.so
+
+//The directory containing a CMake configuration file for Thrift.
+Thrift_DIR:PATH=Thrift_DIR-NOTFOUND
+
+//Path to a file.
+ZLIB_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+ZLIB_LIBRARY_DEBUG:FILEPATH=ZLIB_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a library.
+ZLIB_LIBRARY_RELEASE:FILEPATH=/usr/lib/x86_64-linux-gnu/libz.so
 
 //Value Computed by CMake
 fast_finrl_BINARY_DIR:STATIC=/mnt/c/Users/necro/CLionProjects/fast_finrl/build
@@ -483,14 +558,47 @@ gtest_force_shared_crt:BOOL=OFF
 //Build gtest with internal symbols hidden in shared libraries.
 gtest_hide_internal_symbols:BOOL=OFF
 
+//The directory containing a CMake configuration file for lz4.
+lz4_DIR:PATH=lz4_DIR-NOTFOUND
+
 //Value Computed by CMake
 nlohmann_json_BINARY_DIR:STATIC=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/json-build
+
+//The directory containing a CMake configuration file for nlohmann_json.
+nlohmann_json_DIR:PATH=/home/yoo/miniconda/share/cmake/nlohmann_json
 
 //Value Computed by CMake
 nlohmann_json_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 nlohmann_json_SOURCE_DIR:STATIC=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/json-src
+
+//Path to a library.
+pkgcfg_lib_BROTLI_PC_brotlicommon:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlicommon.so
+
+//Path to a library.
+pkgcfg_lib_BROTLI_PC_brotlidec:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlidec.so
+
+//Path to a library.
+pkgcfg_lib_BROTLI_PC_brotlienc:FILEPATH=/usr/lib/x86_64-linux-gnu/libbrotlienc.so
+
+//Path to a library.
+pkgcfg_lib_LZ4_PC_lz4:FILEPATH=/usr/lib/x86_64-linux-gnu/liblz4.so
+
+//Path to a library.
+pkgcfg_lib_RE2_PC_re2:FILEPATH=/usr/lib/x86_64-linux-gnu/libre2.so
+
+//Path to a library.
+pkgcfg_lib_THRIFT_PC_thrift:FILEPATH=/usr/lib/x86_64-linux-gnu/libthrift.so
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_crypto:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_ssl:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
+
+//The directory containing a CMake configuration file for protobuf.
+protobuf_DIR:PATH=protobuf_DIR-NOTFOUND
 
 //Value Computed by CMake
 pybind11_BINARY_DIR:STATIC=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/pybind11-build
@@ -501,11 +609,77 @@ pybind11_IS_TOP_LEVEL:STATIC=OFF
 //Value Computed by CMake
 pybind11_SOURCE_DIR:STATIC=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/pybind11-src
 
+//The directory containing a CMake configuration file for re2.
+re2_DIR:PATH=re2_DIR-NOTFOUND
+
+//Path to a file.
+utf8proc_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+utf8proc_LIB:FILEPATH=/usr/lib/x86_64-linux-gnu/libutf8proc.so
+
+//The directory containing a CMake configuration file for zstd.
+zstd_DIR:PATH=/home/yoo/miniconda/lib/cmake/zstd
+
 
 ########################
 # INTERNAL cache entries
 ########################
 
+BROTLI_PC_CFLAGS:INTERNAL=
+BROTLI_PC_CFLAGS_I:INTERNAL=
+BROTLI_PC_CFLAGS_OTHER:INTERNAL=
+BROTLI_PC_FOUND:INTERNAL=1
+BROTLI_PC_INCLUDEDIR:INTERNAL=
+BROTLI_PC_INCLUDE_DIRS:INTERNAL=
+BROTLI_PC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lbrotlicommon;-lbrotlienc;-lbrotlidec
+BROTLI_PC_LDFLAGS_OTHER:INTERNAL=
+BROTLI_PC_LIBDIR:INTERNAL=
+BROTLI_PC_LIBRARIES:INTERNAL=brotlicommon;brotlienc;brotlidec
+BROTLI_PC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+BROTLI_PC_LIBS:INTERNAL=
+BROTLI_PC_LIBS_L:INTERNAL=
+BROTLI_PC_LIBS_OTHER:INTERNAL=
+BROTLI_PC_LIBS_PATHS:INTERNAL=
+BROTLI_PC_MODULE_NAME:INTERNAL=
+BROTLI_PC_PREFIX:INTERNAL=
+BROTLI_PC_STATIC_CFLAGS:INTERNAL=
+BROTLI_PC_STATIC_CFLAGS_I:INTERNAL=
+BROTLI_PC_STATIC_CFLAGS_OTHER:INTERNAL=
+BROTLI_PC_STATIC_INCLUDE_DIRS:INTERNAL=
+BROTLI_PC_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lbrotlienc;-lbrotlidec;-lbrotlicommon
+BROTLI_PC_STATIC_LDFLAGS_OTHER:INTERNAL=
+BROTLI_PC_STATIC_LIBDIR:INTERNAL=
+BROTLI_PC_STATIC_LIBRARIES:INTERNAL=brotlienc;brotlidec;brotlicommon
+BROTLI_PC_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+BROTLI_PC_STATIC_LIBS:INTERNAL=
+BROTLI_PC_STATIC_LIBS_L:INTERNAL=
+BROTLI_PC_STATIC_LIBS_OTHER:INTERNAL=
+BROTLI_PC_STATIC_LIBS_PATHS:INTERNAL=
+BROTLI_PC_VERSION:INTERNAL=
+BROTLI_PC_libbrotlicommon_INCLUDEDIR:INTERNAL=/usr/include
+BROTLI_PC_libbrotlicommon_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+BROTLI_PC_libbrotlicommon_MODULE_NAME:INTERNAL=libbrotlicommon
+BROTLI_PC_libbrotlicommon_PREFIX:INTERNAL=/usr
+BROTLI_PC_libbrotlicommon_VERSION:INTERNAL=1.0.9
+BROTLI_PC_libbrotlidec_INCLUDEDIR:INTERNAL=/usr/include
+BROTLI_PC_libbrotlidec_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+BROTLI_PC_libbrotlidec_MODULE_NAME:INTERNAL=libbrotlidec
+BROTLI_PC_libbrotlidec_PREFIX:INTERNAL=/usr
+BROTLI_PC_libbrotlidec_VERSION:INTERNAL=1.0.9
+BROTLI_PC_libbrotlienc_INCLUDEDIR:INTERNAL=/usr/include
+BROTLI_PC_libbrotlienc_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+BROTLI_PC_libbrotlienc_MODULE_NAME:INTERNAL=libbrotlienc
+BROTLI_PC_libbrotlienc_PREFIX:INTERNAL=/usr
+BROTLI_PC_libbrotlienc_VERSION:INTERNAL=1.0.9
+//ADVANCED property for variable: BZIP2_INCLUDE_DIR
+BZIP2_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: BZIP2_LIBRARY_DEBUG
+BZIP2_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: BZIP2_LIBRARY_RELEASE
+BZIP2_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//Have symbol BZ2_bzCompressInit
+BZIP2_NEED_PREFIX:INTERNAL=1
 //ADVANCED property for variable: CMAKE_ADDR2LINE
 CMAKE_ADDR2LINE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_AR
@@ -687,12 +861,6 @@ CMAKE_STRIP-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
-//Details about finding OpenMP
-FIND_PACKAGE_MESSAGE_DETAILS_OpenMP:INTERNAL=[TRUE][TRUE][c ][v4.5()]
-//Details about finding OpenMP_C
-FIND_PACKAGE_MESSAGE_DETAILS_OpenMP_C:INTERNAL=[-fopenmp][/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so][/usr/lib/x86_64-linux-gnu/libpthread.a][v4.5()]
-//Details about finding OpenMP_CXX
-FIND_PACKAGE_MESSAGE_DETAILS_OpenMP_CXX:INTERNAL=[-fopenmp][/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so][/usr/lib/x86_64-linux-gnu/libpthread.a][v4.5()]
 //Details about finding PYTHON
 FIND_PACKAGE_MESSAGE_DETAILS_PYTHON:INTERNAL=/home/yoo/miniconda/bin/python3.12.9
 //Details about finding Python3
@@ -707,31 +875,52 @@ GIT_EXECUTABLE-ADVANCED:INTERNAL=1
 HAS_FLTO:INTERNAL=1
 //Have symbol clock_gettime
 HMDF_HAVE_CLOCK_GETTIME:INTERNAL=1
+LZ4_PC_CFLAGS:INTERNAL=
+LZ4_PC_CFLAGS_I:INTERNAL=
+LZ4_PC_CFLAGS_OTHER:INTERNAL=
+LZ4_PC_FOUND:INTERNAL=1
+LZ4_PC_INCLUDEDIR:INTERNAL=/usr/include
+LZ4_PC_INCLUDE_DIRS:INTERNAL=
+LZ4_PC_LDFLAGS:INTERNAL=-L/usr/lib;-llz4
+LZ4_PC_LDFLAGS_OTHER:INTERNAL=
+LZ4_PC_LIBDIR:INTERNAL=/usr/lib
+LZ4_PC_LIBRARIES:INTERNAL=lz4
+LZ4_PC_LIBRARY_DIRS:INTERNAL=/usr/lib
+LZ4_PC_LIBS:INTERNAL=
+LZ4_PC_LIBS_L:INTERNAL=
+LZ4_PC_LIBS_OTHER:INTERNAL=
+LZ4_PC_LIBS_PATHS:INTERNAL=
+LZ4_PC_MODULE_NAME:INTERNAL=liblz4
+LZ4_PC_PREFIX:INTERNAL=/usr
+LZ4_PC_STATIC_CFLAGS:INTERNAL=
+LZ4_PC_STATIC_CFLAGS_I:INTERNAL=
+LZ4_PC_STATIC_CFLAGS_OTHER:INTERNAL=
+LZ4_PC_STATIC_INCLUDE_DIRS:INTERNAL=
+LZ4_PC_STATIC_LDFLAGS:INTERNAL=-L/usr/lib;-llz4
+LZ4_PC_STATIC_LDFLAGS_OTHER:INTERNAL=
+LZ4_PC_STATIC_LIBDIR:INTERNAL=
+LZ4_PC_STATIC_LIBRARIES:INTERNAL=lz4
+LZ4_PC_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib
+LZ4_PC_STATIC_LIBS:INTERNAL=
+LZ4_PC_STATIC_LIBS_L:INTERNAL=
+LZ4_PC_STATIC_LIBS_OTHER:INTERNAL=
+LZ4_PC_STATIC_LIBS_PATHS:INTERNAL=
+LZ4_PC_VERSION:INTERNAL=1.9.3
+LZ4_PC_liblz4_INCLUDEDIR:INTERNAL=
+LZ4_PC_liblz4_LIBDIR:INTERNAL=
+LZ4_PC_liblz4_PREFIX:INTERNAL=
+LZ4_PC_liblz4_VERSION:INTERNAL=
 NLOHMANN_JSON_CONFIG_INSTALL_DIR:INTERNAL=share/cmake/nlohmann_json
-//Result of TRY_COMPILE
-OpenMP_COMPILE_RESULT_CXX_fopenmp:INTERNAL=TRUE
-//Result of TRY_COMPILE
-OpenMP_COMPILE_RESULT_C_fopenmp:INTERNAL=TRUE
-//ADVANCED property for variable: OpenMP_CXX_FLAGS
-OpenMP_CXX_FLAGS-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: OpenMP_CXX_LIB_NAMES
-OpenMP_CXX_LIB_NAMES-ADVANCED:INTERNAL=1
-//CXX compiler's OpenMP specification date
-OpenMP_CXX_SPEC_DATE:INTERNAL=201511
-//ADVANCED property for variable: OpenMP_C_FLAGS
-OpenMP_C_FLAGS-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: OpenMP_C_LIB_NAMES
-OpenMP_C_LIB_NAMES-ADVANCED:INTERNAL=1
-//C compiler's OpenMP specification date
-OpenMP_C_SPEC_DATE:INTERNAL=201511
-//Result of TRY_COMPILE
-OpenMP_SPECTEST_CXX_:INTERNAL=TRUE
-//Result of TRY_COMPILE
-OpenMP_SPECTEST_C_:INTERNAL=TRUE
-//ADVANCED property for variable: OpenMP_gomp_LIBRARY
-OpenMP_gomp_LIBRARY-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: OpenMP_pthread_LIBRARY
-OpenMP_pthread_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_CRYPTO_LIBRARY
+OPENSSL_CRYPTO_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_INCLUDE_DIR
+OPENSSL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_SSL_LIBRARY
+OPENSSL_SSL_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_ARGN
+PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
+PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
 PYBIND11_INCLUDE_DIR:INTERNAL=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/pybind11-src/include
 //ADVANCED property for variable: PYTHON_EXECUTABLE
 PYTHON_EXECUTABLE-ADVANCED:INTERNAL=1
@@ -745,15 +934,152 @@ PYTHON_MODULE_PREFIX:INTERNAL=
 PYTHON_VERSION:INTERNAL=3.12.9
 PYTHON_VERSION_MAJOR:INTERNAL=3
 PYTHON_VERSION_MINOR:INTERNAL=12
+//ADVANCED property for variable: Protobuf_INCLUDE_DIR
+Protobuf_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_LIBRARY_DEBUG
+Protobuf_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_LIBRARY_RELEASE
+Protobuf_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_LITE_LIBRARY_DEBUG
+Protobuf_LITE_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_LITE_LIBRARY_RELEASE
+Protobuf_LITE_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_PROTOC_EXECUTABLE
+Protobuf_PROTOC_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_PROTOC_LIBRARY_DEBUG
+Protobuf_PROTOC_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Protobuf_PROTOC_LIBRARY_RELEASE
+Protobuf_PROTOC_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 Python_ADDITIONAL_VERSIONS:INTERNAL=3.11;3.10;3.9;3.8;3.7;3.6
+RE2_PC_CFLAGS:INTERNAL=-pthread
+RE2_PC_CFLAGS_I:INTERNAL=
+RE2_PC_CFLAGS_OTHER:INTERNAL=-pthread
+RE2_PC_FOUND:INTERNAL=1
+RE2_PC_INCLUDEDIR:INTERNAL=/usr/include
+RE2_PC_INCLUDE_DIRS:INTERNAL=
+RE2_PC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-pthread;-lre2
+RE2_PC_LDFLAGS_OTHER:INTERNAL=-pthread
+RE2_PC_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+RE2_PC_LIBRARIES:INTERNAL=re2
+RE2_PC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+RE2_PC_LIBS:INTERNAL=
+RE2_PC_LIBS_L:INTERNAL=
+RE2_PC_LIBS_OTHER:INTERNAL=
+RE2_PC_LIBS_PATHS:INTERNAL=
+RE2_PC_MODULE_NAME:INTERNAL=re2
+RE2_PC_PREFIX:INTERNAL=
+RE2_PC_STATIC_CFLAGS:INTERNAL=-pthread
+RE2_PC_STATIC_CFLAGS_I:INTERNAL=
+RE2_PC_STATIC_CFLAGS_OTHER:INTERNAL=-pthread
+RE2_PC_STATIC_INCLUDE_DIRS:INTERNAL=
+RE2_PC_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-pthread;-lre2
+RE2_PC_STATIC_LDFLAGS_OTHER:INTERNAL=-pthread
+RE2_PC_STATIC_LIBDIR:INTERNAL=
+RE2_PC_STATIC_LIBRARIES:INTERNAL=re2
+RE2_PC_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+RE2_PC_STATIC_LIBS:INTERNAL=
+RE2_PC_STATIC_LIBS_L:INTERNAL=
+RE2_PC_STATIC_LIBS_OTHER:INTERNAL=
+RE2_PC_STATIC_LIBS_PATHS:INTERNAL=
+RE2_PC_VERSION:INTERNAL=0.0.0
+RE2_PC_re2_INCLUDEDIR:INTERNAL=
+RE2_PC_re2_LIBDIR:INTERNAL=
+RE2_PC_re2_PREFIX:INTERNAL=
+RE2_PC_re2_VERSION:INTERNAL=
+THRIFT_PC_CFLAGS:INTERNAL=
+THRIFT_PC_CFLAGS_I:INTERNAL=
+THRIFT_PC_CFLAGS_OTHER:INTERNAL=
+THRIFT_PC_FOUND:INTERNAL=1
+THRIFT_PC_INCLUDEDIR:INTERNAL=/usr/include
+THRIFT_PC_INCLUDE_DIRS:INTERNAL=
+THRIFT_PC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lthrift
+THRIFT_PC_LDFLAGS_OTHER:INTERNAL=
+THRIFT_PC_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+THRIFT_PC_LIBRARIES:INTERNAL=thrift
+THRIFT_PC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+THRIFT_PC_LIBS:INTERNAL=
+THRIFT_PC_LIBS_L:INTERNAL=
+THRIFT_PC_LIBS_OTHER:INTERNAL=
+THRIFT_PC_LIBS_PATHS:INTERNAL=
+THRIFT_PC_MODULE_NAME:INTERNAL=thrift
+THRIFT_PC_PREFIX:INTERNAL=/usr
+THRIFT_PC_STATIC_CFLAGS:INTERNAL=
+THRIFT_PC_STATIC_CFLAGS_I:INTERNAL=
+THRIFT_PC_STATIC_CFLAGS_OTHER:INTERNAL=
+THRIFT_PC_STATIC_INCLUDE_DIRS:INTERNAL=
+THRIFT_PC_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lthrift
+THRIFT_PC_STATIC_LDFLAGS_OTHER:INTERNAL=
+THRIFT_PC_STATIC_LIBDIR:INTERNAL=
+THRIFT_PC_STATIC_LIBRARIES:INTERNAL=thrift
+THRIFT_PC_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+THRIFT_PC_STATIC_LIBS:INTERNAL=
+THRIFT_PC_STATIC_LIBS_L:INTERNAL=
+THRIFT_PC_STATIC_LIBS_OTHER:INTERNAL=
+THRIFT_PC_STATIC_LIBS_PATHS:INTERNAL=
+THRIFT_PC_VERSION:INTERNAL=0.16.0
+THRIFT_PC_thrift_INCLUDEDIR:INTERNAL=
+THRIFT_PC_thrift_LIBDIR:INTERNAL=
+THRIFT_PC_thrift_PREFIX:INTERNAL=
+THRIFT_PC_thrift_VERSION:INTERNAL=
+//ADVANCED property for variable: ZLIB_INCLUDE_DIR
+ZLIB_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: ZLIB_LIBRARY_DEBUG
+ZLIB_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: ZLIB_LIBRARY_RELEASE
+ZLIB_LIBRARY_RELEASE-ADVANCED:INTERNAL=1
 //CMAKE_INSTALL_PREFIX during last run
 _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=/usr/local
+_OPENSSL_CFLAGS:INTERNAL=
+_OPENSSL_CFLAGS_I:INTERNAL=
+_OPENSSL_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_FOUND:INTERNAL=1
+_OPENSSL_INCLUDEDIR:INTERNAL=/usr/include
+_OPENSSL_INCLUDE_DIRS:INTERNAL=
+_OPENSSL_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-lcrypto
+_OPENSSL_LDFLAGS_OTHER:INTERNAL=
+_OPENSSL_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBRARIES:INTERNAL=ssl;crypto
+_OPENSSL_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBS:INTERNAL=
+_OPENSSL_LIBS_L:INTERNAL=
+_OPENSSL_LIBS_OTHER:INTERNAL=
+_OPENSSL_LIBS_PATHS:INTERNAL=
+_OPENSSL_MODULE_NAME:INTERNAL=openssl
+_OPENSSL_PREFIX:INTERNAL=/usr
+_OPENSSL_STATIC_CFLAGS:INTERNAL=
+_OPENSSL_STATIC_CFLAGS_I:INTERNAL=
+_OPENSSL_STATIC_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_STATIC_INCLUDE_DIRS:INTERNAL=
+_OPENSSL_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-lcrypto;-ldl;-pthread
+_OPENSSL_STATIC_LDFLAGS_OTHER:INTERNAL=-pthread
+_OPENSSL_STATIC_LIBDIR:INTERNAL=
+_OPENSSL_STATIC_LIBRARIES:INTERNAL=ssl;crypto;dl
+_OPENSSL_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_STATIC_LIBS:INTERNAL=
+_OPENSSL_STATIC_LIBS_L:INTERNAL=
+_OPENSSL_STATIC_LIBS_OTHER:INTERNAL=
+_OPENSSL_STATIC_LIBS_PATHS:INTERNAL=
+_OPENSSL_VERSION:INTERNAL=3.0.2
+_OPENSSL_openssl_INCLUDEDIR:INTERNAL=
+_OPENSSL_openssl_LIBDIR:INTERNAL=
+_OPENSSL_openssl_PREFIX:INTERNAL=
+_OPENSSL_openssl_VERSION:INTERNAL=
 _Python:INTERNAL=PYTHON
 //Path to a program.
 _Python3_EXECUTABLE:INTERNAL=/usr/bin/python3.10
 //Python3 Properties
 _Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;10;12;64;;cpython-310-x86_64-linux-gnu;/usr/lib/python3.10;/usr/lib/python3.10;/usr/lib/python3/dist-packages;/usr/lib/python3/dist-packages
 _Python3_INTERPRETER_SIGNATURE:INTERNAL=b91b4035ecb3bb3f5760d35922531bcd
+__pkg_config_arguments_BROTLI_PC:INTERNAL=libbrotlicommon;libbrotlienc;libbrotlidec
+__pkg_config_arguments_LZ4_PC:INTERNAL=liblz4
+__pkg_config_arguments_RE2_PC:INTERNAL=re2
+__pkg_config_arguments_THRIFT_PC:INTERNAL=thrift
+__pkg_config_arguments__OPENSSL:INTERNAL=QUIET;openssl
+__pkg_config_checked_BROTLI_PC:INTERNAL=1
+__pkg_config_checked_LZ4_PC:INTERNAL=1
+__pkg_config_checked_RE2_PC:INTERNAL=1
+__pkg_config_checked_THRIFT_PC:INTERNAL=1
+__pkg_config_checked__OPENSSL:INTERNAL=1
 cmake_package_name:INTERNAL=GTest
 generated_dir:INTERNAL=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/_deps/googletest-build/googletest/generated
 //ADVANCED property for variable: gmock_build_tests
@@ -768,6 +1094,23 @@ gtest_disable_pthreads-ADVANCED:INTERNAL=1
 gtest_force_shared_crt-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: gtest_hide_internal_symbols
 gtest_hide_internal_symbols-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_BROTLI_PC_brotlicommon
+pkgcfg_lib_BROTLI_PC_brotlicommon-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_BROTLI_PC_brotlidec
+pkgcfg_lib_BROTLI_PC_brotlidec-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_BROTLI_PC_brotlienc
+pkgcfg_lib_BROTLI_PC_brotlienc-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_LZ4_PC_lz4
+pkgcfg_lib_LZ4_PC_lz4-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_RE2_PC_re2
+pkgcfg_lib_RE2_PC_re2-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_THRIFT_PC_thrift
+pkgcfg_lib_THRIFT_PC_thrift-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_crypto
+pkgcfg_lib__OPENSSL_crypto-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_ssl
+pkgcfg_lib__OPENSSL_ssl-ADVANCED:INTERNAL=1
+prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
 //True if pybind11 and all required components found on the system
 pybind11_FOUND:INTERNAL=TRUE
 //Directory where pybind11 headers are located

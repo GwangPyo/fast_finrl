@@ -11,8 +11,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
-# OpenMP disabled - DataFrame library has internal #pragma omp simd in lambdas that conflict
-# find_package(OpenMP REQUIRED)
+# OpenMP disabled - DataFrame library has #pragma omp simd in lambdas that conflict
+# find_package(OpenMP)
 
 # FetchContent for dependencies
 include(FetchContent)
@@ -54,6 +54,18 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(DataFrame json googletest pybind11)
 
+# Optional: Arrow/Parquet for fast Parquet file loading
+find_package(Arrow QUIET)
+find_package(Parquet QUIET)
+
+if(Arrow_FOUND AND Parquet_FOUND)
+    message(STATUS "Arrow and Parquet found - Parquet support enabled")
+    set(HAVE_PARQUET TRUE)
+else()
+    message(STATUS "Arrow/Parquet not found - Parquet support disabled. Install with: conda install -c conda-forge arrow-cpp parquet-cpp")
+    set(HAVE_PARQUET FALSE)
+endif()
+
 # Main library
 add_library(fast_finrl_lib
     src/FastFinRL.cpp
@@ -62,6 +74,12 @@ target_include_directories(fast_finrl_lib PUBLIC include)
 set_target_properties(fast_finrl_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 find_package(TBB REQUIRED)
 target_link_libraries(fast_finrl_lib PUBLIC DataFrame::DataFrame nlohmann_json::nlohmann_json TBB::tbb)
+
+# Conditionally link Arrow/Parquet
+if(HAVE_PARQUET)
+    target_link_libraries(fast_finrl_lib PUBLIC Arrow::arrow_shared Parquet::parquet_shared)
+    target_compile_definitions(fast_finrl_lib PUBLIC HAVE_PARQUET=1)
+endif()
 
 # Main executable
 add_executable(fast_finrl main.cpp)
@@ -80,3 +98,9 @@ target_link_libraries(fast_finrl_py PRIVATE fast_finrl_lib)
 
 # Install Python module (for pip install)
 install(TARGETS fast_finrl_py LIBRARY DESTINATION .)
+
+# CSV to Parquet conversion tool (only if Arrow/Parquet available)
+if(HAVE_PARQUET)
+    add_executable(csv_to_parquet tools/csv_to_parquet.cpp)
+    target_link_libraries(csv_to_parquet PRIVATE Arrow::arrow_shared Parquet::parquet_shared)
+endif()
