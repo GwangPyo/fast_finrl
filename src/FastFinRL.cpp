@@ -9,13 +9,11 @@
 #include <omp.h>
 #endif
 
-#ifdef HAVE_PARQUET
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
-#endif
 
 // DataFrame selector macros for filtering by ticker and day
 #define DF_SELECTOR_BY_TICKER_DAY(ticker_var, day_var) \
@@ -101,7 +99,6 @@ hmdf::ReadParams FastFinRL::build_csv2_schema(const string& csv_path) {
     return params;
 }
 
-#ifdef HAVE_PARQUET
 namespace {
     // Template to extract column data from Arrow chunked array
     template<typename ArrowType, typename CppType>
@@ -216,29 +213,20 @@ void FastFinRL::load_from_parquet(const string& path) {
         }
     }
 }
-#endif
 
 void FastFinRL::load_dataframe(const string& path) {
     // Enable DataFrame's internal threading for parallel operations
     hmdf::ThreadGranularity::set_optimum_thread_level();
 
-    // Check file extension
+    // Check file extension and load accordingly
     bool is_parquet = (path.size() >= 8 && path.substr(path.size() - 8) == ".parquet");
 
-#ifdef HAVE_PARQUET
     if (is_parquet) {
         load_from_parquet(path);
     } else {
         auto params = build_csv2_schema(path);
         df_.read(path.c_str(), hmdf::io_format::csv2, params);
     }
-#else
-    if (is_parquet) {
-        throw runtime_error("Parquet support not compiled. Rebuild with Arrow/Parquet installed.");
-    }
-    auto params = build_csv2_schema(path);
-    df_.read(path.c_str(), hmdf::io_format::csv2, params);
-#endif
 
     // Get all unique tickers using DataFrame library
     auto unique_tics = df_.get_col_unique_values<string>("tic");
