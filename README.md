@@ -151,6 +151,14 @@ day,date,tic,open,high,low,close,volume,macd,rsi_14
 
 ## Build from Source
 
+### Requirements (Ubuntu/Debian)
+
+```bash
+sudo apt install -y libarrow-dev libparquet-dev libtbb-dev
+```
+
+### Build
+
 ```bash
 git clone https://github.com/GwangPyo/fast_finrl.git
 cd fast_finrl
