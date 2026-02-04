@@ -14,21 +14,21 @@ This warning is for project developers.  Use -Wno-dev to suppress it.
 
 -- pybind11::lto disabled (problems with undefined symbols for MinGW for now)
 -- pybind11::thin_lto disabled (problems with undefined symbols for MinGW for now)
--- Arrow/Parquet not found - Parquet support disabled. Install with: conda install -c conda-forge arrow-cpp parquet-cpp
-CMake Error at CMakeLists.txt:75 (find_package):
-  By not providing "FindTBB.cmake" in CMAKE_MODULE_PATH this project has
-  asked CMake to find a package configuration file provided by "TBB", but
+CMake Error at CMakeLists.txt:58 (find_package):
+  By not providing "FindArrow.cmake" in CMAKE_MODULE_PATH this project has
+  asked CMake to find a package configuration file provided by "Arrow", but
   CMake did not find one.
 
-  Could not find a package configuration file provided by "TBB" with any of
+  Could not find a package configuration file provided by "Arrow" with any of
   the following names:
 
-    TBBConfig.cmake
-    tbb-config.cmake
+    ArrowConfig.cmake
+    arrow-config.cmake
 
-  Add the installation prefix of "TBB" to CMAKE_PREFIX_PATH or set "TBB_DIR"
-  to a directory containing one of the above files.  If "TBB" provides a
-  separate development package or SDK, be sure it has been installed.
+  Add the installation prefix of "Arrow" to CMAKE_PREFIX_PATH or set
+  "Arrow_DIR" to a directory containing one of the above files.  If "Arrow"
+  provides a separate development package or SDK, be sure it has been
+  installed.
 
 
 -- Configuring incomplete, errors occurred!

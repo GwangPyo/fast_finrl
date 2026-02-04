@@ -41,7 +41,7 @@ FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     , tech_indicator_list_(config.tech_indicator_list)
     , json_handler_(make_unique<JsonHandler>(*this))
 {
-    excluded_columns_ = {"day", "date", "tic", "open", "high", "low", "close", "volume", "start"};
+    excluded_columns_ = {"day", "day_idx", "date", "tic", "open", "high", "low", "close", "volume", "start"};
     load_dataframe(csv_path);
     extract_indicator_names();
     init_bid_options();
@@ -253,18 +253,15 @@ void FastFinRL::load_dataframe(const string& path) {
         day_values.push_back(date_to_day[date]);
     }
 
-    // Add or replace 'day' column in DataFrame
-    if (df_.has_column("day")) {
-        df_.remove_column<int>("day");
-    }
-    df_.load_column("day", move(day_values));
+    // Create 'day' column from sorted date timestamps
+    df_.load_column("day_idx", move(day_values));
 
     // Set max_day
     max_day_ = static_cast<int>(sorted_dates.size());
 
     // Build pre-computed lookup tables
     const auto& tic_col = df_.get_column<string>("tic");
-    const auto& day_col = df_.get_column<int>("day");
+    const auto& day_col = df_.get_column<int>("day_idx");
     row_index_map_.clear();
     ticker_first_day_.clear();
     ticker_global_idx_.clear();

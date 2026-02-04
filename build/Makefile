@@ -224,19 +224,6 @@ fast_finrl_py/fast:
 .PHONY : fast_finrl_py/fast
 
 #=============================================================================
-# Target rules for targets named csv_to_parquet
-
-# Build rule for target.
-csv_to_parquet: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 csv_to_parquet
-.PHONY : csv_to_parquet
-
-# fast build rule for target.
-csv_to_parquet/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/build
-.PHONY : csv_to_parquet/fast
-
-#=============================================================================
 # Target rules for targets named DataFrame
 
 # Build rule for target.
@@ -397,30 +384,6 @@ tests/test_fast_finrl.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_tests.dir/build.make CMakeFiles/fast_finrl_tests.dir/tests/test_fast_finrl.cpp.s
 .PHONY : tests/test_fast_finrl.cpp.s
 
-tools/csv_to_parquet.o: tools/csv_to_parquet.cpp.o
-.PHONY : tools/csv_to_parquet.o
-
-# target to build an object file
-tools/csv_to_parquet.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.o
-.PHONY : tools/csv_to_parquet.cpp.o
-
-tools/csv_to_parquet.i: tools/csv_to_parquet.cpp.i
-.PHONY : tools/csv_to_parquet.i
-
-# target to preprocess a source file
-tools/csv_to_parquet.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.i
-.PHONY : tools/csv_to_parquet.cpp.i
-
-tools/csv_to_parquet.s: tools/csv_to_parquet.cpp.s
-.PHONY : tools/csv_to_parquet.s
-
-# target to generate assembly for a file
-tools/csv_to_parquet.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.s
-.PHONY : tools/csv_to_parquet.cpp.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -435,7 +398,6 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... DataFrame"
-	@echo "... csv_to_parquet"
 	@echo "... fast_finrl"
 	@echo "... fast_finrl_lib"
 	@echo "... fast_finrl_py"
@@ -456,9 +418,6 @@ help:
 	@echo "... tests/test_fast_finrl.o"
 	@echo "... tests/test_fast_finrl.i"
 	@echo "... tests/test_fast_finrl.s"
-	@echo "... tools/csv_to_parquet.o"
-	@echo "... tools/csv_to_parquet.i"
-	@echo "... tools/csv_to_parquet.s"
 .PHONY : help
 
 

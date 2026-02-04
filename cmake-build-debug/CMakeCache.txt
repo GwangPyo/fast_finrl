@@ -21,6 +21,9 @@ Arrow_DIR:PATH=Arrow_DIR-NOTFOUND
 BUILD_GMOCK:BOOL=ON
 
 //Path to a program.
+CABAL_EXECUTABLE:FILEPATH=CABAL_EXECUTABLE-NOTFOUND
+
+//Path to a program.
 CMAKE_ADDR2LINE:FILEPATH=C:/Program Files/JetBrains/CLion 2024.1.1/bin/mingw/bin/addr2line.exe
 
 //Path to a program.
@@ -360,6 +363,9 @@ FETCHCONTENT_UPDATES_DISCONNECTED_JSON:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of pybind11
 FETCHCONTENT_UPDATES_DISCONNECTED_PYBIND11:BOOL=OFF
+
+//Path to a program.
+GHC_EXECUTABLE:FILEPATH=GHC_EXECUTABLE-NOTFOUND
 
 //Git command line client
 GIT_EXECUTABLE:FILEPATH=C:/Program Files/Git/cmd/git.exe
