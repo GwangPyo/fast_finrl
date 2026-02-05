@@ -77,7 +77,7 @@ public:
 
     // Raw data struct for numpy binding (no JSON overhead)
     struct MarketWindowData {
-        vector<double> ohlc;        // flat [total_len * 4]
+        vector<double> ohlcv;       // flat [total_len * 5]
         vector<double> indicators;  // flat [total_len * n_indicators]
         vector<int> mask;           // [total_len]
         vector<int> days;           // [total_len]
@@ -89,18 +89,18 @@ public:
 
     // Separated past/current/future data for a single ticker
     struct TickerWindowData {
-        // Past: [h, 4], [h, n_ind], [h]
-        vector<double> past_ohlc;
+        // Past: [h, 5], [h, n_ind], [h] - OHLCV
+        vector<double> past_ohlcv;
         vector<double> past_indicators;
         vector<int> past_mask;
         vector<int> past_days;
-        // Current: [4], [n_ind]
-        vector<double> current_ohlc;
+        // Current: open only (scalar), indicators [n_ind]
+        double current_open;
         vector<double> current_indicators;
         int current_mask;
         int current_day;
-        // Future: [f, 4], [f, n_ind], [f]
-        vector<double> future_ohlc;
+        // Future: [f, 5], [f, n_ind], [f] - OHLCV
+        vector<double> future_ohlcv;
         vector<double> future_indicators;
         vector<int> future_mask;
         vector<int> future_days;
@@ -119,13 +119,13 @@ public:
     // Batch fill for replay buffer optimization
     // Fills multiple samples directly into pre-allocated arrays
     // samples: [(global_ticker_idx, day), ...] - N samples
-    // ohlc_out: [N * time_len * 4] - pre-allocated
+    // ohlcv_out: [N * time_len * 5] - pre-allocated (OHLCV)
     // ind_out: [N * time_len * n_ind] - pre-allocated
     // mask_out: [N * time_len] - pre-allocated
     void fill_market_batch(
         const vector<pair<size_t, int>>& samples,  // [(global_idx, day), ...]
         int h,  // history length (time_len = h + 1)
-        double* ohlc_out,
+        double* ohlcv_out,
         double* ind_out,
         int* mask_out
     ) const;
@@ -181,6 +181,7 @@ private:
     optional<DoubleColRef> col_high_;
     optional<DoubleColRef> col_low_;
     optional<DoubleColRef> col_close_;
+    optional<DoubleColRef> col_volume_;
     optional<StringColRef> col_date_;
     vector<pair<string, DoubleColRef>> indicator_cols_;  // vector for cache locality
 

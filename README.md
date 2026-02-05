@@ -136,17 +136,17 @@ Fetch historical + future market data for ML models. **Zero-copy numpy arrays.**
 data = env.get_market_window_numpy(["AAPL", "GOOGL"], day=500, h=100, future=20)
 
 # Per-ticker data:
-data["AAPL"]["past_ohlc"]           # shape: (h, 4) = (100, 4)
+data["AAPL"]["past_ohlcv"]          # shape: (h, 5) = (100, 5) - OHLCV
 data["AAPL"]["past_indicators"]     # shape: (h, n_ind)
 data["AAPL"]["past_mask"]           # shape: (h,), 1=valid, 0=padding
 data["AAPL"]["past_days"]           # shape: (h,), day indices
 
-data["AAPL"]["current_ohlc"]        # shape: (4,)
+data["AAPL"]["current_open"]        # float (only open to prevent data leak)
 data["AAPL"]["current_indicators"]  # shape: (n_ind,)
 data["AAPL"]["current_mask"]        # int, 1 or 0
 data["AAPL"]["current_day"]         # int
 
-data["AAPL"]["future_ohlc"]         # shape: (future, 4) = (20, 4)
+data["AAPL"]["future_ohlcv"]        # shape: (future, 5) = (20, 5) - OHLCV
 data["AAPL"]["future_indicators"]   # shape: (future, n_ind)
 data["AAPL"]["future_mask"]         # shape: (future,)
 data["AAPL"]["future_days"]         # shape: (future,)
@@ -226,13 +226,13 @@ env.stop_loss_calculation   # str
     },
     "market": {
         "AAPL": {
-            "open": 150.0, "high": 152.0, "low": 149.0, "close": 151.0,
+            "open": 150.0,  # Only open price (no HLC to prevent data leak)
             "indicators": {"macd": 0.5, "rsi_14": 55.0, ...}
         },
         "GOOGL": {...}
     },
     "macro": {  # Only if macro_tickers configured
-        "VIX": {"open": 15.0, ..., "indicators": {...}}
+        "VIX": {"open": 15.0, "indicators": {...}}
     }
 }
 ```
@@ -275,12 +275,11 @@ Flat dict with numpy arrays. No nested structure.
     "total_asset": 100230.0,                 # float
     "shares": np.array([0, 0]),              # shape: (n_tickers,)
     "avg_buy_price": np.array([0., 0.]),     # shape: (n_tickers,)
-    "ohlc": np.array([[150, 152, 149, 151],  # shape: (n_tickers, 4)
-                      [2800, 2850, 2790, 2820]]),
+    "open": np.array([150.0, 2800.0]),       # shape: (n_tickers,) - only open price
     "indicators": np.array([[0.5, 55], ...]),# shape: (n_tickers, n_ind)
     "tickers": ["AAPL", "GOOGL"],            # List[str]
     "indicator_names": ["macd", "rsi_14"],   # List[str]
-    "macro_ohlc": np.array([...]),           # shape: (n_macro, 4), if configured
+    "macro_open": np.array([15.0]),          # shape: (n_macro,), if configured
     "macro_indicators": np.array([...]),     # shape: (n_macro, n_ind), if configured
     "macro_tickers": ["VIX"]                 # List[str], if configured
 }
@@ -367,13 +366,13 @@ s, a, r, s_next, done, s_mask, s_next_mask = buffer.sample(h=20, batch_size=512)
 **State dict (`s`, `s_next`) structure:**
 
 ```python
-# Per-ticker market data
-s["AAPL"]["ohlc"]              # shape: (batch, h+1, 4)
-s["AAPL"]["indicators"]        # shape: (batch, h+1, n_ind)
+# Per-ticker market data (h history only, no current day to prevent lookahead)
+s["AAPL"]["ohlcv"]             # shape: (batch, h, 5) - OHLCV
+s["AAPL"]["indicators"]        # shape: (batch, h, n_ind)
 
 # Macro tickers
-s["macro"]["VIX"]["ohlc"]      # shape: (batch, h+1, 4)
-s["macro"]["VIX"]["indicators"] # shape: (batch, h+1, n_ind)
+s["macro"]["VIX"]["ohlcv"]     # shape: (batch, h, 5) - OHLCV
+s["macro"]["VIX"]["indicators"] # shape: (batch, h, n_ind)
 
 # Portfolio
 s["portfolio"]["cash"]          # shape: (batch,)
@@ -389,8 +388,8 @@ s["macro_tickers"]             # List[str]: macro ticker names
 **Mask dict (`s_mask`) structure:**
 
 ```python
-s_mask["AAPL"]           # shape: (batch, h+1), 1=valid, 0=padding
-s_mask["macro"]["VIX"]   # shape: (batch, h+1)
+s_mask["AAPL"]           # shape: (batch, h), 1=valid, 0=padding
+s_mask["macro"]["VIX"]   # shape: (batch, h)
 ```
 
 ---
@@ -551,10 +550,10 @@ states[0] = {
     "reward": 0.0,
     "shares": np.array([0, 0]),            # (n_tickers,)
     "avg_buy_price": np.array([0., 0.]),   # (n_tickers,)
-    "ohlc": np.array([[...], [...]]),      # (n_tickers, 4)
+    "open": np.array([150.0, 2800.0]),     # (n_tickers,) - only open price
     "indicators": np.array([[...], [...]]),# (n_tickers, n_ind)
     "tickers": ["AAPL", "GOOGL"],
-    "macro_ohlc": np.array([...]),         # (n_macro, 4) if configured
+    "macro_open": np.array([15.0]),        # (n_macro,) if configured
     "macro_indicators": np.array([...])    # (n_macro, n_ind) if configured
 }
 ```
@@ -573,10 +572,10 @@ state = {
     "reward": np.array([0., 0.]),               # (N,)
     "shares": np.array([[0, 0], [0, 0]]),       # (N, n_tickers)
     "avg_buy_price": np.array([[0., 0.], ...]), # (N, n_tickers)
-    "ohlc": np.array([[[...]], [[...]]]),       # (N, n_tickers, 4)
+    "open": np.array([[150., 2800.], ...]),     # (N, n_tickers) - only open price
     "indicators": np.array([[[...]], [[...]]]), # (N, n_tickers, n_ind)
     "tickers": [["AAPL", "GOOGL"], ["MSFT", "AAPL"]],
-    "macro_ohlc": np.array([...]),              # (N, n_macro, 4)
+    "macro_open": np.array([[15.], ...]),       # (N, n_macro)
     "macro_indicators": np.array([...]),        # (N, n_macro, n_ind)
     "n_envs": 2,
     "n_tickers": 2,
@@ -740,7 +739,7 @@ for step in range(10000):
 vec_env = VecFastFinRL("data.csv", return_format="vec")
 
 state = vec_env.reset(tickers_list, seeds)
-# state["ohlc"].shape = (N, n_tickers, 4)
+# state["open"].shape = (N, n_tickers) - only open price
 # state["done"].shape = (N,)
 
 # Or switch at runtime

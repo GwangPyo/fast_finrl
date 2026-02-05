@@ -41,14 +41,11 @@ nlohmann::json JsonStateSerializer::serialize(const StateData& state, bool inclu
     portfolio["holdings"] = move(holdings);
     result["portfolio"] = move(portfolio);
 
-    // Market
+    // Market (open only - no HLC to prevent data leak)
     nlohmann::json market;
     for (const auto& [ticker, data] : state.market.tickers) {
         nlohmann::json ticker_data;
         ticker_data["open"] = data.open;
-        ticker_data["high"] = data.high;
-        ticker_data["low"] = data.low;
-        ticker_data["close"] = data.close;
 
         nlohmann::json indicators;
         for (const auto& [name, value] : data.indicators) {
@@ -59,14 +56,11 @@ nlohmann::json JsonStateSerializer::serialize(const StateData& state, bool inclu
     }
     result["market"] = move(market);
 
-    // Macro tickers
+    // Macro tickers (open only)
     nlohmann::json macro;
     for (const auto& [ticker, data] : state.macro.tickers) {
         nlohmann::json ticker_data;
         ticker_data["open"] = data.open;
-        ticker_data["high"] = data.high;
-        ticker_data["low"] = data.low;
-        ticker_data["close"] = data.close;
 
         nlohmann::json indicators;
         for (const auto& [name, value] : data.indicators) {

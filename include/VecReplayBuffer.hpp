@@ -85,19 +85,19 @@ public:
     // Batch sample result
     struct SampleBatch {
         // Per-ticker market data
-        std::map<std::string, std::vector<double>> s_ohlc;      // [batch * (h+1) * 4]
+        std::map<std::string, std::vector<double>> s_ohlcv;     // [batch * (h+1) * 5] - OHLCV
         std::map<std::string, std::vector<double>> s_indicators;
         std::map<std::string, std::vector<int>> s_mask;
 
-        std::map<std::string, std::vector<double>> s_next_ohlc;
+        std::map<std::string, std::vector<double>> s_next_ohlcv;
         std::map<std::string, std::vector<double>> s_next_indicators;
         std::map<std::string, std::vector<int>> s_next_mask;
 
         // Macro ticker market data
-        std::map<std::string, std::vector<double>> macro_ohlc;
+        std::map<std::string, std::vector<double>> macro_ohlcv;
         std::map<std::string, std::vector<double>> macro_indicators;
         std::map<std::string, std::vector<int>> macro_mask;
-        std::map<std::string, std::vector<double>> macro_next_ohlc;
+        std::map<std::string, std::vector<double>> macro_next_ohlcv;
         std::map<std::string, std::vector<double>> macro_next_indicators;
         std::map<std::string, std::vector<int>> macro_next_mask;
 
@@ -154,7 +154,7 @@ private:
     int n_macro_tickers_ = 0;
 
     // Pre-allocated sample buffers (reused across calls)
-    mutable std::vector<double> sample_ohlc_buf_;
+    mutable std::vector<double> sample_ohlcv_buf_;
     mutable std::vector<double> sample_ind_buf_;
     mutable std::vector<int> sample_mask_buf_;
 };

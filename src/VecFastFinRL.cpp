@@ -88,7 +88,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     buffer_.cash.resize(num_envs_);
     buffer_.shares.resize(num_envs_ * n_tickers_);
     buffer_.avg_buy_price.resize(num_envs_ * n_tickers_);
-    buffer_.ohlc.resize(num_envs_ * n_tickers_ * 4);
+    buffer_.open.resize(num_envs_ * n_tickers_);
     buffer_.indicators.resize(num_envs_ * n_tickers_ * n_indicators_);
     buffer_.reward.resize(num_envs_, 0.0);
     buffer_.done.resize(num_envs_, false);
@@ -96,7 +96,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     buffer_.total_asset.resize(num_envs_);
 
     if (n_macro_ > 0) {
-        buffer_.macro_ohlc.resize(num_envs_ * n_macro_ * 4);
+        buffer_.macro_open.resize(num_envs_ * n_macro_);
         buffer_.macro_indicators.resize(num_envs_ * n_macro_ * n_indicators_);
     }
 
@@ -201,55 +201,37 @@ void VecFastFinRL::fill_obs(size_t env_idx) {
         buffer_.avg_buy_price[base_idx + t] = avg_buy_price_[base_idx + t];
     }
 
-    // Fill OHLC and indicators for each ticker
+    // Fill open price and indicators for each ticker (no HLC - data leak)
     for (int t = 0; t < n_tickers_; ++t) {
         const string& tic = tickers_[env_idx][t];
-        size_t ohlc_base = (env_idx * n_tickers_ + t) * 4;
+        size_t open_idx = env_idx * n_tickers_ + t;
         size_t ind_base = (env_idx * n_tickers_ + t) * n_indicators_;
 
-        try {
-            buffer_.ohlc[ohlc_base + 0] = base_env_->get_raw_value(tic, day, "open");
-            buffer_.ohlc[ohlc_base + 1] = base_env_->get_raw_value(tic, day, "high");
-            buffer_.ohlc[ohlc_base + 2] = base_env_->get_raw_value(tic, day, "low");
-            buffer_.ohlc[ohlc_base + 3] = base_env_->get_raw_value(tic, day, "close");
+        buffer_.open[open_idx] = base_env_->get_raw_value(tic, day, "open");
 
-            // Indicators
-            auto indicator_names = base_env_->get_indicator_names();
-            int ind_idx = 0;
-            for (const string& ind_name : indicator_names) {
-                buffer_.indicators[ind_base + ind_idx] = base_env_->get_raw_value(tic, day, ind_name);
-                ind_idx++;
-            }
-        } catch (...) {
-            // Fill with zeros if data not available
-            for (int k = 0; k < 4; ++k) buffer_.ohlc[ohlc_base + k] = 0.0;
-            for (int k = 0; k < n_indicators_; ++k) buffer_.indicators[ind_base + k] = 0.0;
+        auto indicator_names = base_env_->get_indicator_names();
+        int ind_idx = 0;
+        for (const string& ind_name : indicator_names) {
+            buffer_.indicators[ind_base + ind_idx] = base_env_->get_raw_value(tic, day, ind_name);
+            ind_idx++;
         }
     }
 
-    // Fill macro tickers
+    // Fill macro tickers (open only)
     if (n_macro_ > 0) {
         const auto& macro_tickers = base_env_->get_macro_tickers();
         for (int m = 0; m < n_macro_; ++m) {
             const string& tic = macro_tickers[m];
-            size_t ohlc_base = (env_idx * n_macro_ + m) * 4;
+            size_t open_idx = env_idx * n_macro_ + m;
             size_t ind_base = (env_idx * n_macro_ + m) * n_indicators_;
 
-            try {
-                buffer_.macro_ohlc[ohlc_base + 0] = base_env_->get_raw_value(tic, day, "open");
-                buffer_.macro_ohlc[ohlc_base + 1] = base_env_->get_raw_value(tic, day, "high");
-                buffer_.macro_ohlc[ohlc_base + 2] = base_env_->get_raw_value(tic, day, "low");
-                buffer_.macro_ohlc[ohlc_base + 3] = base_env_->get_raw_value(tic, day, "close");
+            buffer_.macro_open[open_idx] = base_env_->get_raw_value(tic, day, "open");
 
-                auto indicator_names = base_env_->get_indicator_names();
-                int ind_idx = 0;
-                for (const string& ind_name : indicator_names) {
-                    buffer_.macro_indicators[ind_base + ind_idx] = base_env_->get_raw_value(tic, day, ind_name);
-                    ind_idx++;
-                }
-            } catch (...) {
-                for (int k = 0; k < 4; ++k) buffer_.macro_ohlc[ohlc_base + k] = 0.0;
-                for (int k = 0; k < n_indicators_; ++k) buffer_.macro_indicators[ind_base + k] = 0.0;
+            auto indicator_names = base_env_->get_indicator_names();
+            int ind_idx = 0;
+            for (const string& ind_name : indicator_names) {
+                buffer_.macro_indicators[ind_base + ind_idx] = base_env_->get_raw_value(tic, day, ind_name);
+                ind_idx++;
             }
         }
     }

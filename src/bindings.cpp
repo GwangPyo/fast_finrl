@@ -159,22 +159,19 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 state["shares"] = shares;
                 state["avg_buy_price"] = avg_buy_price;
 
-                // Market data
+                // Market data (open only)
                 auto& market = json_state["market"];
                 auto indicator_names = self.get_indicator_names();
                 int n_ind = static_cast<int>(indicator_names.size());
 
-                py::array_t<double> ohlc({n_tic, 4});
+                py::array_t<double> open_arr({n_tic});
                 py::array_t<double> indicators({n_tic, n_ind});
-                double* ohlc_ptr = ohlc.mutable_data();
+                double* open_ptr = open_arr.mutable_data();
                 double* ind_ptr = indicators.mutable_data();
 
                 for (int i = 0; i < n_tic; ++i) {
                     const auto& m = market[ticker_list[i]];
-                    ohlc_ptr[i * 4 + 0] = m["open"].get<double>();
-                    ohlc_ptr[i * 4 + 1] = m["high"].get<double>();
-                    ohlc_ptr[i * 4 + 2] = m["low"].get<double>();
-                    ohlc_ptr[i * 4 + 3] = m["close"].get<double>();
+                    open_ptr[i] = m["open"].get<double>();
 
                     const auto& inds = m["indicators"];
                     int j = 0;
@@ -183,27 +180,24 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         ++j;
                     }
                 }
-                state["ohlc"] = ohlc;
+                state["open"] = open_arr;
                 state["indicators"] = indicators;
                 state["tickers"] = ticker_list;
 
-                // Macro
+                // Macro (open only)
                 if (json_state.contains("macro") && !json_state["macro"].empty()) {
                     auto& macro = json_state["macro"];
                     auto macro_tickers = self.get_macro_tickers();
                     int n_macro = static_cast<int>(macro_tickers.size());
 
-                    py::array_t<double> macro_ohlc({n_macro, 4});
+                    py::array_t<double> macro_open({n_macro});
                     py::array_t<double> macro_ind({n_macro, n_ind});
-                    double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                    double* m_open_ptr = macro_open.mutable_data();
                     double* m_ind_ptr = macro_ind.mutable_data();
 
                     for (int i = 0; i < n_macro; ++i) {
                         const auto& m = macro[macro_tickers[i]];
-                        m_ohlc_ptr[i * 4 + 0] = m["open"].get<double>();
-                        m_ohlc_ptr[i * 4 + 1] = m["high"].get<double>();
-                        m_ohlc_ptr[i * 4 + 2] = m["low"].get<double>();
-                        m_ohlc_ptr[i * 4 + 3] = m["close"].get<double>();
+                        m_open_ptr[i] = m["open"].get<double>();
 
                         const auto& inds = m["indicators"];
                         int j = 0;
@@ -212,7 +206,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                             ++j;
                         }
                     }
-                    state["macro_ohlc"] = macro_ohlc;
+                    state["macro_open"] = macro_open;
                     state["macro_indicators"] = macro_ind;
                     state["macro_tickers"] = macro_tickers;
                 }
@@ -274,21 +268,18 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 state["shares"] = shares;
                 state["avg_buy_price"] = avg_buy_price;
 
-                // Market data
+                // Market data (open only - no HLC to prevent data leak)
                 auto indicator_names = self.get_indicator_names();
                 int n_ind = static_cast<int>(indicator_names.size());
 
-                py::array_t<double> ohlc({n_tic, 4});
+                py::array_t<double> open_arr({n_tic});
                 py::array_t<double> indicators({n_tic, n_ind});
-                double* ohlc_ptr = ohlc.mutable_data();
+                double* open_ptr = open_arr.mutable_data();
                 double* ind_ptr = indicators.mutable_data();
 
                 for (int i = 0; i < n_tic; ++i) {
                     const auto& m = market[ticker_list[i]];
-                    ohlc_ptr[i * 4 + 0] = m["open"].get<double>();
-                    ohlc_ptr[i * 4 + 1] = m["high"].get<double>();
-                    ohlc_ptr[i * 4 + 2] = m["low"].get<double>();
-                    ohlc_ptr[i * 4 + 3] = m["close"].get<double>();
+                    open_ptr[i] = m["open"].get<double>();
 
                     const auto& inds = m["indicators"];
                     int j = 0;
@@ -297,27 +288,24 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         ++j;
                     }
                 }
-                state["ohlc"] = ohlc;
+                state["open"] = open_arr;
                 state["indicators"] = indicators;
                 state["tickers"] = ticker_list;
 
-                // Macro
+                // Macro (open only)
                 if (json_state.contains("macro") && !json_state["macro"].empty()) {
                     auto& macro = json_state["macro"];
                     auto macro_tickers = self.get_macro_tickers();
                     int n_macro = static_cast<int>(macro_tickers.size());
 
-                    py::array_t<double> macro_ohlc({n_macro, 4});
+                    py::array_t<double> macro_open({n_macro});
                     py::array_t<double> macro_ind({n_macro, n_ind});
-                    double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                    double* m_open_ptr = macro_open.mutable_data();
                     double* m_ind_ptr = macro_ind.mutable_data();
 
                     for (int i = 0; i < n_macro; ++i) {
                         const auto& m = macro[macro_tickers[i]];
-                        m_ohlc_ptr[i * 4 + 0] = m["open"].get<double>();
-                        m_ohlc_ptr[i * 4 + 1] = m["high"].get<double>();
-                        m_ohlc_ptr[i * 4 + 2] = m["low"].get<double>();
-                        m_ohlc_ptr[i * 4 + 3] = m["close"].get<double>();
+                        m_open_ptr[i] = m["open"].get<double>();
 
                         const auto& inds = m["indicators"];
                         int j = 0;
@@ -326,7 +314,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                             ++j;
                         }
                     }
-                    state["macro_ohlc"] = macro_ohlc;
+                    state["macro_open"] = macro_open;
                     state["macro_indicators"] = macro_ind;
                     state["macro_tickers"] = macro_tickers;
                 }
@@ -409,10 +397,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
                 };
 
-                // Past arrays - zero-copy views
-                ticker_dict["past_ohlc"] = py::array_t<double>(
-                    {h, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.past_ohlc.data(), make_capsule());
+                // Past arrays - zero-copy views (OHLCV)
+                ticker_dict["past_ohlcv"] = py::array_t<double>(
+                    {h, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.past_ohlcv.data(), make_capsule());
 
                 ticker_dict["past_indicators"] = py::array_t<double>(
                     {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -426,10 +414,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     {h}, {sizeof(int)},
                     td.past_days.data(), make_capsule());
 
-                // Current arrays - zero-copy views
-                ticker_dict["current_ohlc"] = py::array_t<double>(
-                    {4}, {sizeof(double)},
-                    td.current_ohlc.data(), make_capsule());
+                // Current: open only (scalar)
+                ticker_dict["current_open"] = td.current_open;
 
                 ticker_dict["current_indicators"] = py::array_t<double>(
                     {n_ind}, {sizeof(double)},
@@ -438,10 +424,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 ticker_dict["current_mask"] = td.current_mask;
                 ticker_dict["current_day"] = td.current_day;
 
-                // Future arrays - zero-copy views
-                ticker_dict["future_ohlc"] = py::array_t<double>(
-                    {future, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.future_ohlc.data(), make_capsule());
+                // Future arrays - zero-copy views (OHLCV)
+                ticker_dict["future_ohlcv"] = py::array_t<double>(
+                    {future, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.future_ohlcv.data(), make_capsule());
 
                 ticker_dict["future_indicators"] = py::array_t<double>(
                     {future, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -550,8 +536,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              "Sample random indices from buffer")
         .def("sample", [](const fast_finrl::ReplayBuffer& self, int h, std::optional<size_t> batch_size) -> py::tuple {
             // Returns: (s, a, r, s', s_mask, s'_mask)
-            // s/s': dict[ticker] -> ohlc [batch, h+1, 4], indicators [batch, h+1, n_ind]
-            // s_mask/s'_mask: dict[ticker] -> [batch, h+1] or None if h=0
+            // s/s': dict[ticker] -> ohlcv [batch, h, 5], indicators [batch, h, n_ind] (history only, no current)
+            // s_mask/s'_mask: dict[ticker] -> [batch, h] or None if h=0
             // a: [batch, n_tickers]
             // r: [batch]
 
@@ -561,7 +547,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             );
 
             const int B = holder->batch_size;
-            const int T = h + 1;
+            const int T = h;  // history only (no current day)
             const int n_ind = holder->n_indicators;
             const int n_tic = holder->n_tickers;
 
@@ -583,21 +569,21 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const auto& ticker : holder->tickers) {
                 py::dict td, td_next;
 
-                // OHLC [B, T, 4]
-                td["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->s_ohlc[ticker].data(), make_capsule());
+                // OHLCV [B, T, 5]
+                td["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->s_ohlcv[ticker].data(), make_capsule());
 
                 td["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
                     {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
                     holder->s_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->s_next_ohlc[ticker].data(), make_capsule());
+                td_next["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->s_next_ohlcv[ticker].data(), make_capsule());
 
                 td_next["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
@@ -625,20 +611,20 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const std::string& ticker : holder->macro_tickers) {
                 py::dict td, td_next;
 
-                td["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->macro_ohlc[ticker].data(), make_capsule());
+                td["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->macro_ohlcv[ticker].data(), make_capsule());
 
                 td["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
                     {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
                     holder->macro_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->macro_next_ohlc[ticker].data(), make_capsule());
+                td_next["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->macro_next_ohlcv[ticker].data(), make_capsule());
 
                 td_next["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
@@ -746,9 +732,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
                 };
 
-                ticker_dict["past_ohlc"] = py::array_t<double>(
-                    {h, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.past_ohlc.data(), make_capsule());
+                ticker_dict["past_ohlcv"] = py::array_t<double>(
+                    {h, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.past_ohlcv.data(), make_capsule());
 
                 ticker_dict["past_indicators"] = py::array_t<double>(
                     {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -762,9 +748,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     {h}, {sizeof(int)},
                     td.past_days.data(), make_capsule());
 
-                ticker_dict["current_ohlc"] = py::array_t<double>(
-                    {4}, {sizeof(double)},
-                    td.current_ohlc.data(), make_capsule());
+                ticker_dict["current_open"] = td.current_open;
 
                 ticker_dict["current_indicators"] = py::array_t<double>(
                     {n_ind}, {sizeof(double)},
@@ -773,9 +757,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 ticker_dict["current_mask"] = td.current_mask;
                 ticker_dict["current_day"] = td.current_day;
 
-                ticker_dict["future_ohlc"] = py::array_t<double>(
-                    {future, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.future_ohlc.data(), make_capsule());
+                ticker_dict["future_ohlcv"] = py::array_t<double>(
+                    {future, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.future_ohlcv.data(), make_capsule());
 
                 ticker_dict["future_indicators"] = py::array_t<double>(
                     {future, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -841,14 +825,12 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
             state["avg_buy_price"] = avg_buy_price;
 
-            py::array_t<double> ohlc({n_tic, 4});
-            double* ohlc_ptr = ohlc.mutable_data();
+            py::array_t<double> open_arr({n_tic});
+            double* open_ptr = open_arr.mutable_data();
             for (int t = 0; t < n_tic; ++t) {
-                for (int k = 0; k < 4; ++k) {
-                    ohlc_ptr[t * 4 + k] = result.ohlc[(i * n_tic + t) * 4 + k];
-                }
+                open_ptr[t] = result.open[i * n_tic + t];
             }
-            state["ohlc"] = ohlc;
+            state["open"] = open_arr;
 
             py::array_t<double> indicators({n_tic, n_ind});
             double* ind_ptr = indicators.mutable_data();
@@ -862,14 +844,12 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             state["tickers"] = tickers_list[i];
 
             if (n_macro > 0) {
-                py::array_t<double> macro_ohlc({n_macro, 4});
-                double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                py::array_t<double> macro_open({n_macro});
+                double* m_open_ptr = macro_open.mutable_data();
                 for (int m = 0; m < n_macro; ++m) {
-                    for (int k = 0; k < 4; ++k) {
-                        m_ohlc_ptr[m * 4 + k] = result.macro_ohlc[(i * n_macro + m) * 4 + k];
-                    }
+                    m_open_ptr[m] = result.macro_open[i * n_macro + m];
                 }
-                state["macro_ohlc"] = macro_ohlc;
+                state["macro_open"] = macro_open;
 
                 py::array_t<double> macro_ind({n_macro, n_ind});
                 double* m_ind_ptr = macro_ind.mutable_data();
@@ -939,11 +919,11 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         std::memcpy(avg_ptr, result.avg_buy_price.data(), N * n_tic * sizeof(double));
         state["avg_buy_price"] = avg_buy_price;
 
-        // ohlc: [N, n_tickers, 4]
-        py::array_t<double> ohlc({N, n_tic, 4});
-        double* ohlc_ptr = ohlc.mutable_data();
-        std::memcpy(ohlc_ptr, result.ohlc.data(), N * n_tic * 4 * sizeof(double));
-        state["ohlc"] = ohlc;
+        // open: [N, n_tickers]
+        py::array_t<double> open_arr({N, n_tic});
+        double* open_ptr = open_arr.mutable_data();
+        std::memcpy(open_ptr, result.open.data(), N * n_tic * sizeof(double));
+        state["open"] = open_arr;
 
         // indicators: [N, n_tickers, n_ind]
         py::array_t<double> indicators({N, n_tic, n_ind});
@@ -954,12 +934,12 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // tickers: List[List[str]]
         state["tickers"] = tickers_list;
 
-        // macro: [N, n_macro, 4] and [N, n_macro, n_ind]
+        // macro: [N, n_macro] and [N, n_macro, n_ind]
         if (n_macro > 0) {
-            py::array_t<double> macro_ohlc({N, n_macro, 4});
-            double* m_ohlc_ptr = macro_ohlc.mutable_data();
-            std::memcpy(m_ohlc_ptr, result.macro_ohlc.data(), N * n_macro * 4 * sizeof(double));
-            state["macro_ohlc"] = macro_ohlc;
+            py::array_t<double> macro_open({N, n_macro});
+            double* m_open_ptr = macro_open.mutable_data();
+            std::memcpy(m_open_ptr, result.macro_open.data(), N * n_macro * sizeof(double));
+            state["macro_open"] = macro_open;
 
             py::array_t<double> macro_ind({N, n_macro, n_ind});
             double* m_ind_ptr = macro_ind.mutable_data();
@@ -1122,9 +1102,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
                 };
 
-                ticker_dict["past_ohlc"] = py::array_t<double>(
-                    {h, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.past_ohlc.data(), make_capsule());
+                ticker_dict["past_ohlcv"] = py::array_t<double>(
+                    {h, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.past_ohlcv.data(), make_capsule());
 
                 ticker_dict["past_indicators"] = py::array_t<double>(
                     {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -1138,9 +1118,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     {h}, {sizeof(int)},
                     td.past_days.data(), make_capsule());
 
-                ticker_dict["current_ohlc"] = py::array_t<double>(
-                    {4}, {sizeof(double)},
-                    td.current_ohlc.data(), make_capsule());
+                ticker_dict["current_open"] = td.current_open;
 
                 ticker_dict["current_indicators"] = py::array_t<double>(
                     {n_ind}, {sizeof(double)},
@@ -1149,9 +1127,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 ticker_dict["current_mask"] = td.current_mask;
                 ticker_dict["current_day"] = td.current_day;
 
-                ticker_dict["future_ohlc"] = py::array_t<double>(
-                    {future, 4}, {4 * sizeof(double), sizeof(double)},
-                    td.future_ohlc.data(), make_capsule());
+                ticker_dict["future_ohlcv"] = py::array_t<double>(
+                    {future, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.future_ohlcv.data(), make_capsule());
 
                 ticker_dict["future_indicators"] = py::array_t<double>(
                     {future, n_ind}, {n_ind * sizeof(double), sizeof(double)},
@@ -1285,7 +1263,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             );
 
             const int B = holder->batch_size;
-            const int T = h + 1;
+            const int T = h;  // history only (no current day)
             const int n_ind = holder->n_indicators;
             const int n_tic = holder->n_tickers;
 
@@ -1307,20 +1285,20 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const auto& ticker : holder->unique_tickers) {
                 py::dict td, td_next;
 
-                td["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->s_ohlc[ticker].data(), make_capsule());
+                td["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->s_ohlcv[ticker].data(), make_capsule());
 
                 td["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
                     {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
                     holder->s_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->s_next_ohlc[ticker].data(), make_capsule());
+                td_next["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->s_next_ohlcv[ticker].data(), make_capsule());
 
                 td_next["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
@@ -1347,20 +1325,20 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const std::string& ticker : holder->macro_tickers) {
                 py::dict td, td_next;
 
-                td["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->macro_ohlc[ticker].data(), make_capsule());
+                td["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->macro_ohlcv[ticker].data(), make_capsule());
 
                 td["indicators"] = py::array_t<double>(
                     {B, T, n_ind},
                     {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
                     holder->macro_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlc"] = py::array_t<double>(
-                    {B, T, 4},
-                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
-                    holder->macro_next_ohlc[ticker].data(), make_capsule());
+                td_next["ohlcv"] = py::array_t<double>(
+                    {B, T, 5},
+                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
+                    holder->macro_next_ohlcv[ticker].data(), make_capsule());
 
                 td_next["indicators"] = py::array_t<double>(
                     {B, T, n_ind},

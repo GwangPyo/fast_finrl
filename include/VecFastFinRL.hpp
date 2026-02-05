@@ -18,9 +18,9 @@ public:
         vector<double> cash;                // [N]
         vector<int> shares;                 // [N * n_tickers]
         vector<double> avg_buy_price;       // [N * n_tickers]
-        vector<double> ohlc;                // [N * n_tickers * 4]
+        vector<double> open;                // [N * n_tickers] - current day open only
         vector<double> indicators;          // [N * n_tickers * n_ind]
-        vector<double> macro_ohlc;          // [N * n_macro * 4]
+        vector<double> macro_open;          // [N * n_macro] - current day open only
         vector<double> macro_indicators;    // [N * n_macro * n_ind]
         vector<double> reward;              // [N]
         vector<uint8_t> done;               // [N] (not bool - pybind11 issue)

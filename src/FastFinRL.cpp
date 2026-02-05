@@ -121,6 +121,7 @@ void FastFinRL::build_index_tables() {
     col_high_.emplace(df_.get_column<double>("high"));
     col_low_.emplace(df_.get_column<double>("low"));
     col_close_.emplace(df_.get_column<double>("close"));
+    col_volume_.emplace(df_.get_column<double>("volume"));
     col_date_.emplace(df_.get_column<string>("date"));
 }
 
@@ -795,8 +796,8 @@ FastFinRL::MarketWindowData FastFinRL::get_market_window_raw(const string& ticke
     result.total_len = total_len;
     result.n_indicators = static_cast<int>(n_ind);
 
-    // Pre-allocate flat arrays
-    result.ohlc.resize(total_len * 4, 0.0);
+    // Pre-allocate flat arrays - OHLCV (5 values)
+    result.ohlcv.resize(total_len * 5, 0.0);
     result.indicators.resize(total_len * n_ind, 0.0);
     result.mask.resize(total_len, 0);
     result.days.resize(total_len, -1);
@@ -808,7 +809,7 @@ FastFinRL::MarketWindowData FastFinRL::get_market_window_raw(const string& ticke
     }
 
     // Parallel fill using raw pointers for thread safety
-    double* ohlc_ptr = result.ohlc.data();
+    double* ohlcv_ptr = result.ohlcv.data();
     double* ind_ptr = result.indicators.data();
     int* mask_ptr = result.mask.data();
     int* days_ptr = result.days.data();
@@ -827,11 +828,12 @@ FastFinRL::MarketWindowData FastFinRL::get_market_window_raw(const string& ticke
 
                 if (d >= first_day && d >= 0 && d < max_day_) {
                     size_t row_idx = ticker_row_table_[global_idx][d];
-                    size_t ohlc_base = i * 4;
-                    ohlc_ptr[ohlc_base + 0] = col_open_->get()[row_idx];
-                    ohlc_ptr[ohlc_base + 1] = col_high_->get()[row_idx];
-                    ohlc_ptr[ohlc_base + 2] = col_low_->get()[row_idx];
-                    ohlc_ptr[ohlc_base + 3] = col_close_->get()[row_idx];
+                    size_t ohlcv_base = i * 5;
+                    ohlcv_ptr[ohlcv_base + 0] = col_open_->get()[row_idx];
+                    ohlcv_ptr[ohlcv_base + 1] = col_high_->get()[row_idx];
+                    ohlcv_ptr[ohlcv_base + 2] = col_low_->get()[row_idx];
+                    ohlcv_ptr[ohlcv_base + 3] = col_close_->get()[row_idx];
+                    ohlcv_ptr[ohlcv_base + 4] = col_volume_->get()[row_idx];
 
                     size_t ind_base = i * n_ind;
                     for (size_t j = 0; j < n_ind; ++j) {
@@ -851,11 +853,11 @@ FastFinRL::MarketWindowData FastFinRL::get_market_window_raw(const string& ticke
 void FastFinRL::fill_market_batch(
     const vector<pair<size_t, int>>& samples,
     int h,
-    double* ohlc_out,
+    double* ohlcv_out,
     double* ind_out,
     int* mask_out
 ) const {
-    const int time_len = h + 1;
+    const int time_len = h;  // history only (no current day to prevent lookahead)
     const size_t n_ind = indicator_cols_.size();
     const size_t N = samples.size();
 
@@ -883,7 +885,7 @@ void FastFinRL::fill_market_batch(
                     int d = day - h + i;
 
                     size_t out_idx = s * time_len + i;
-                    size_t ohlc_base = out_idx * 4;
+                    size_t ohlcv_base = out_idx * 5;
                     size_t ind_base = out_idx * n_ind;
 
                     if (d >= first_day && d >= 0 && d < max_day_ &&
@@ -891,10 +893,11 @@ void FastFinRL::fill_market_batch(
                         size_t row_idx = ticker_row_table_[global_idx][d];
 
                         if (row_idx != static_cast<size_t>(-1)) {
-                            ohlc_out[ohlc_base + 0] = col_open_->get()[row_idx];
-                            ohlc_out[ohlc_base + 1] = col_high_->get()[row_idx];
-                            ohlc_out[ohlc_base + 2] = col_low_->get()[row_idx];
-                            ohlc_out[ohlc_base + 3] = col_close_->get()[row_idx];
+                            ohlcv_out[ohlcv_base + 0] = col_open_->get()[row_idx];
+                            ohlcv_out[ohlcv_base + 1] = col_high_->get()[row_idx];
+                            ohlcv_out[ohlcv_base + 2] = col_low_->get()[row_idx];
+                            ohlcv_out[ohlcv_base + 3] = col_close_->get()[row_idx];
+                            ohlcv_out[ohlcv_base + 4] = col_volume_->get()[row_idx];
 
                             for (size_t j = 0; j < n_ind; ++j) {
                                 ind_out[ind_base + j] = indicator_cols_[j].second.get()[row_idx];
@@ -906,10 +909,11 @@ void FastFinRL::fill_market_batch(
                     }
 
                     // Invalid data - fill zeros
-                    ohlc_out[ohlc_base + 0] = 0.0;
-                    ohlc_out[ohlc_base + 1] = 0.0;
-                    ohlc_out[ohlc_base + 2] = 0.0;
-                    ohlc_out[ohlc_base + 3] = 0.0;
+                    ohlcv_out[ohlcv_base + 0] = 0.0;
+                    ohlcv_out[ohlcv_base + 1] = 0.0;
+                    ohlcv_out[ohlcv_base + 2] = 0.0;
+                    ohlcv_out[ohlcv_base + 3] = 0.0;
+                    ohlcv_out[ohlcv_base + 4] = 0.0;
                     for (size_t j = 0; j < n_ind; ++j) {
                         ind_out[ind_base + j] = 0.0;
                     }
@@ -957,32 +961,33 @@ FastFinRL::MultiTickerWindowData FastFinRL::get_market_window_multi(
                 TickerWindowData& td = ticker_results[t].second;
                 ticker_results[t].first = ticker;
 
-                // Allocate arrays
-                td.past_ohlc.resize(h * 4, 0.0);
+                // Allocate arrays - OHLCV (5 values)
+                td.past_ohlcv.resize(h * 5, 0.0);
                 td.past_indicators.resize(h * n_ind, 0.0);
                 td.past_mask.resize(h, 0);
                 td.past_days.resize(h, -1);
 
-                td.current_ohlc.resize(4, 0.0);
+                td.current_open = 0.0;
                 td.current_indicators.resize(n_ind, 0.0);
                 td.current_mask = 0;
                 td.current_day = -1;
 
-                td.future_ohlc.resize(future * 4, 0.0);
+                td.future_ohlcv.resize(future * 5, 0.0);
                 td.future_indicators.resize(future * n_ind, 0.0);
                 td.future_mask.resize(future, 0);
                 td.future_days.resize(future, -1);
 
-                // Fill past: [day-h, day-1]
+                // Fill past: [day-h, day-1] - OHLCV
                 for (int i = 0; i < h; ++i) {
                     int d = day - h + i;
                     if (d >= first_day && d >= 0 && d < max_day_) {
                         size_t row_idx = ticker_row_table_[global_idx][d];
-                        size_t base = i * 4;
-                        td.past_ohlc[base + 0] = col_open_->get()[row_idx];
-                        td.past_ohlc[base + 1] = col_high_->get()[row_idx];
-                        td.past_ohlc[base + 2] = col_low_->get()[row_idx];
-                        td.past_ohlc[base + 3] = col_close_->get()[row_idx];
+                        size_t base = i * 5;
+                        td.past_ohlcv[base + 0] = col_open_->get()[row_idx];
+                        td.past_ohlcv[base + 1] = col_high_->get()[row_idx];
+                        td.past_ohlcv[base + 2] = col_low_->get()[row_idx];
+                        td.past_ohlcv[base + 3] = col_close_->get()[row_idx];
+                        td.past_ohlcv[base + 4] = col_volume_->get()[row_idx];
 
                         size_t ind_base = i * n_ind;
                         for (size_t j = 0; j < n_ind; ++j) {
@@ -993,13 +998,10 @@ FastFinRL::MultiTickerWindowData FastFinRL::get_market_window_multi(
                     }
                 }
 
-                // Fill current
+                // Fill current - only open price (high/low/close are future info)
                 if (day >= first_day && day < max_day_) {
                     size_t row_idx = ticker_row_table_[global_idx][day];
-                    td.current_ohlc[0] = col_open_->get()[row_idx];
-                    td.current_ohlc[1] = col_high_->get()[row_idx];
-                    td.current_ohlc[2] = col_low_->get()[row_idx];
-                    td.current_ohlc[3] = col_close_->get()[row_idx];
+                    td.current_open = col_open_->get()[row_idx];
 
                     for (size_t j = 0; j < n_ind; ++j) {
                         td.current_indicators[j] = indicator_cols_[j].second.get()[row_idx];
@@ -1008,16 +1010,17 @@ FastFinRL::MultiTickerWindowData FastFinRL::get_market_window_multi(
                     td.current_day = day;
                 }
 
-                // Fill future: [day+1, day+future]
+                // Fill future: [day+1, day+future] - OHLCV
                 for (int i = 0; i < future; ++i) {
                     int d = day + 1 + i;
                     if (d >= first_day && d < max_day_) {
                         size_t row_idx = ticker_row_table_[global_idx][d];
-                        size_t base = i * 4;
-                        td.future_ohlc[base + 0] = col_open_->get()[row_idx];
-                        td.future_ohlc[base + 1] = col_high_->get()[row_idx];
-                        td.future_ohlc[base + 2] = col_low_->get()[row_idx];
-                        td.future_ohlc[base + 3] = col_close_->get()[row_idx];
+                        size_t base = i * 5;
+                        td.future_ohlcv[base + 0] = col_open_->get()[row_idx];
+                        td.future_ohlcv[base + 1] = col_high_->get()[row_idx];
+                        td.future_ohlcv[base + 2] = col_low_->get()[row_idx];
+                        td.future_ohlcv[base + 3] = col_close_->get()[row_idx];
+                        td.future_ohlcv[base + 4] = col_volume_->get()[row_idx];
 
                         size_t ind_base = i * n_ind;
                         for (size_t j = 0; j < n_ind; ++j) {

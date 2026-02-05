@@ -66,23 +66,23 @@ public:
 
     // Batch sample result
     struct SampleBatch {
-        // Per-ticker market data: ticker -> {ohlc, indicators, mask, days}
-        // ohlc shape: [batch, h+1, 4] (h history + current)
+        // Per-ticker market data: ticker -> {ohlcv, indicators, mask, days}
+        // ohlcv shape: [batch, h+1, 5] (h history + current) - OHLCV
         // indicators shape: [batch, h+1, n_ind]
         // mask shape: [batch, h+1] (1=valid, 0=padding)
-        std::map<std::string, std::vector<double>> s_ohlc;      // [batch * (h+1) * 4]
+        std::map<std::string, std::vector<double>> s_ohlcv;     // [batch * (h+1) * 5]
         std::map<std::string, std::vector<double>> s_indicators;
         std::map<std::string, std::vector<int>> s_mask;         // nullptr equivalent when h=0
 
-        std::map<std::string, std::vector<double>> s_next_ohlc;
+        std::map<std::string, std::vector<double>> s_next_ohlcv;
         std::map<std::string, std::vector<double>> s_next_indicators;
         std::map<std::string, std::vector<int>> s_next_mask;
 
         // Macro ticker market data
-        std::map<std::string, std::vector<double>> macro_ohlc;
+        std::map<std::string, std::vector<double>> macro_ohlcv;
         std::map<std::string, std::vector<double>> macro_indicators;
         std::map<std::string, std::vector<int>> macro_mask;
-        std::map<std::string, std::vector<double>> macro_next_ohlc;
+        std::map<std::string, std::vector<double>> macro_next_ohlcv;
         std::map<std::string, std::vector<double>> macro_next_indicators;
         std::map<std::string, std::vector<int>> macro_next_mask;
 
