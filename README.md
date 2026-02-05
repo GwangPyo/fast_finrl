@@ -5,7 +5,7 @@ High-performance C++ implementation of FinRL StockTradingEnv.
 ## Installation
 
 ```bash
-pip install fast-finrl
+pip install  git+https://github.com/GwangPyo/fast_finrl
 ```
 
 Build from source:
@@ -747,3 +747,4 @@ state = vec_env.reset(tickers_list, seeds)
 vec_env.set_return_format("vec")
 state = vec_env.step(actions)
 ```
+
