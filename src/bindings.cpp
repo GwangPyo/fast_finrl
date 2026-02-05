@@ -6,6 +6,8 @@
 #include <optional>
 #include "FastFinRL.hpp"
 #include "ReplayBuffer.hpp"
+#include "VecFastFinRL.hpp"
+#include "VecReplayBuffer.hpp"
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 
@@ -574,4 +576,602 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def("clear", &fast_finrl::ReplayBuffer::clear, "Clear buffer")
         .def("save", &fast_finrl::ReplayBuffer::save, py::arg("path"), "Save buffer to file")
         .def("load", &fast_finrl::ReplayBuffer::load, py::arg("path"), "Load buffer from file");
+
+    // VecFastFinRL - Vectorized environment for N parallel environments
+    py::class_<fast_finrl::VecFastFinRL>(m, "VecFastFinRL")
+        .def(py::init([](const std::string& csv_path,
+                         double initial_amount,
+                         int hmax,
+                         double buy_cost_pct,
+                         double sell_cost_pct,
+                         double stop_loss_tolerance,
+                         const std::string& bidding,
+                         const std::string& stop_loss_calculation,
+                         const std::vector<std::string>& tech_indicator_list,
+                         const std::vector<std::string>& macro_tickers,
+                         bool auto_reset) {
+            fast_finrl::FastFinRLConfig config;
+            config.initial_amount = initial_amount;
+            config.hmax = hmax;
+            config.buy_cost_pct = buy_cost_pct;
+            config.sell_cost_pct = sell_cost_pct;
+            config.stop_loss_tolerance = stop_loss_tolerance;
+            config.bidding = bidding;
+            config.stop_loss_calculation = stop_loss_calculation;
+            config.tech_indicator_list = tech_indicator_list;
+            config.macro_tickers = macro_tickers;
+            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, config);
+        }),
+             py::arg("csv_path"),
+             py::arg("initial_amount") = 30000.0,
+             py::arg("hmax") = 15,
+             py::arg("buy_cost_pct") = 0.01,
+             py::arg("sell_cost_pct") = 0.01,
+             py::arg("stop_loss_tolerance") = 0.8,
+             py::arg("bidding") = "default",
+             py::arg("stop_loss_calculation") = "close",
+             py::arg("tech_indicator_list") = std::vector<std::string>{},
+             py::arg("macro_tickers") = std::vector<std::string>{},
+             py::arg("auto_reset") = true,
+             "Create VecFastFinRL - vectorized environment managing N parallel environments")
+
+        // reset -> returns list of dicts (one per env)
+        .def("reset", [](fast_finrl::VecFastFinRL& self,
+                         const std::vector<std::vector<std::string>>& tickers_list,
+                         py::array_t<int64_t> seeds_arr) -> py::list {
+            // Get seeds from numpy array
+            auto seeds_buf = seeds_arr.request();
+            int64_t* seeds_ptr = static_cast<int64_t*>(seeds_buf.ptr);
+            std::vector<int64_t> seeds(seeds_ptr, seeds_ptr + seeds_buf.size);
+
+            auto result = self.reset(tickers_list, seeds);
+
+            const int N = result.num_envs;
+            const int n_tic = result.n_tickers;
+            const int n_ind = result.n_indicators;
+            const int n_macro = result.n_macro;
+
+            py::list states;
+            for (int i = 0; i < N; ++i) {
+                py::dict state;
+                state["day"] = result.day[i];
+                state["cash"] = result.cash[i];
+                state["total_asset"] = result.total_asset[i];
+                state["done"] = (result.done[i] != 0);
+                state["terminal"] = (result.terminal[i] != 0);
+                state["reward"] = result.reward[i];
+
+                // shares [n_tickers]
+                py::array_t<int> shares(n_tic);
+                int* shares_ptr = shares.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    shares_ptr[t] = result.shares[i * n_tic + t];
+                }
+                state["shares"] = shares;
+
+                // avg_buy_price [n_tickers]
+                py::array_t<double> avg_buy_price(n_tic);
+                double* avg_ptr = avg_buy_price.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    avg_ptr[t] = result.avg_buy_price[i * n_tic + t];
+                }
+                state["avg_buy_price"] = avg_buy_price;
+
+                // ohlc [n_tickers, 4]
+                py::array_t<double> ohlc({n_tic, 4});
+                double* ohlc_ptr = ohlc.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < 4; ++k) {
+                        ohlc_ptr[t * 4 + k] = result.ohlc[(i * n_tic + t) * 4 + k];
+                    }
+                }
+                state["ohlc"] = ohlc;
+
+                // indicators [n_tickers, n_ind]
+                py::array_t<double> indicators({n_tic, n_ind});
+                double* ind_ptr = indicators.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < n_ind; ++k) {
+                        ind_ptr[t * n_ind + k] = result.indicators[(i * n_tic + t) * n_ind + k];
+                    }
+                }
+                state["indicators"] = indicators;
+
+                // tickers list
+                state["tickers"] = tickers_list[i];
+
+                // macro data (if present)
+                if (n_macro > 0) {
+                    py::array_t<double> macro_ohlc({n_macro, 4});
+                    double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < 4; ++k) {
+                            m_ohlc_ptr[m * 4 + k] = result.macro_ohlc[(i * n_macro + m) * 4 + k];
+                        }
+                    }
+                    state["macro_ohlc"] = macro_ohlc;
+
+                    py::array_t<double> macro_ind({n_macro, n_ind});
+                    double* m_ind_ptr = macro_ind.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < n_ind; ++k) {
+                            m_ind_ptr[m * n_ind + k] = result.macro_indicators[(i * n_macro + m) * n_ind + k];
+                        }
+                    }
+                    state["macro_indicators"] = macro_ind;
+                }
+
+                states.append(state);
+            }
+            return states;
+        }, py::arg("tickers_list"), py::arg("seeds"),
+           "Reset N environments. tickers_list: List[List[str]] (each env can have different tickers, count must match)")
+
+        // step -> returns list of dicts (one per env)
+        .def("step", [](fast_finrl::VecFastFinRL& self,
+                        py::array_t<double, py::array::c_style | py::array::forcecast> actions_arr) -> py::list {
+            auto actions_buf = actions_arr.request();
+            if (actions_buf.ndim != 2) {
+                throw std::runtime_error("actions must be 2D array [N, n_tickers]");
+            }
+
+            const double* actions_ptr = static_cast<const double*>(actions_buf.ptr);
+            auto result = self.step(actions_ptr);
+
+            const int N = result.num_envs;
+            const int n_tic = result.n_tickers;
+            const int n_ind = result.n_indicators;
+            const int n_macro = result.n_macro;
+            const auto& tickers = self.get_tickers();
+
+            py::list states;
+            for (int i = 0; i < N; ++i) {
+                py::dict state;
+                state["day"] = result.day[i];
+                state["cash"] = result.cash[i];
+                state["total_asset"] = result.total_asset[i];
+                state["done"] = (result.done[i] != 0);
+                state["terminal"] = (result.terminal[i] != 0);
+                state["reward"] = result.reward[i];
+
+                // shares [n_tickers]
+                py::array_t<int> shares(n_tic);
+                int* shares_ptr = shares.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    shares_ptr[t] = result.shares[i * n_tic + t];
+                }
+                state["shares"] = shares;
+
+                // avg_buy_price [n_tickers]
+                py::array_t<double> avg_buy_price(n_tic);
+                double* avg_ptr = avg_buy_price.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    avg_ptr[t] = result.avg_buy_price[i * n_tic + t];
+                }
+                state["avg_buy_price"] = avg_buy_price;
+
+                // ohlc [n_tickers, 4]
+                py::array_t<double> ohlc({n_tic, 4});
+                double* ohlc_ptr = ohlc.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < 4; ++k) {
+                        ohlc_ptr[t * 4 + k] = result.ohlc[(i * n_tic + t) * 4 + k];
+                    }
+                }
+                state["ohlc"] = ohlc;
+
+                // indicators [n_tickers, n_ind]
+                py::array_t<double> indicators({n_tic, n_ind});
+                double* ind_ptr = indicators.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < n_ind; ++k) {
+                        ind_ptr[t * n_ind + k] = result.indicators[(i * n_tic + t) * n_ind + k];
+                    }
+                }
+                state["indicators"] = indicators;
+
+                // tickers list
+                state["tickers"] = tickers[i];
+
+                // macro data (if present)
+                if (n_macro > 0) {
+                    py::array_t<double> macro_ohlc({n_macro, 4});
+                    double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < 4; ++k) {
+                            m_ohlc_ptr[m * 4 + k] = result.macro_ohlc[(i * n_macro + m) * 4 + k];
+                        }
+                    }
+                    state["macro_ohlc"] = macro_ohlc;
+
+                    py::array_t<double> macro_ind({n_macro, n_ind});
+                    double* m_ind_ptr = macro_ind.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < n_ind; ++k) {
+                            m_ind_ptr[m * n_ind + k] = result.macro_indicators[(i * n_macro + m) * n_ind + k];
+                        }
+                    }
+                    state["macro_indicators"] = macro_ind;
+                }
+
+                states.append(state);
+            }
+            return states;
+        }, py::arg("actions"),
+           "Execute one step with actions [N, n_tickers]. Returns list of state dicts.")
+
+        // Partial reset - reset only specified indices
+        .def("reset_indices", [](fast_finrl::VecFastFinRL& self,
+                                 const std::vector<int>& indices,
+                                 py::array_t<int64_t> seeds_arr) -> py::list {
+            auto seeds_buf = seeds_arr.request();
+            int64_t* seeds_ptr = static_cast<int64_t*>(seeds_buf.ptr);
+            std::vector<int64_t> seeds(seeds_ptr, seeds_ptr + seeds_buf.size);
+
+            auto result = self.reset_indices(indices, seeds);
+
+            const int N = result.num_envs;
+            const int n_tic = result.n_tickers;
+            const int n_ind = result.n_indicators;
+            const int n_macro = result.n_macro;
+            const auto& tickers = self.get_tickers();
+
+            py::list states;
+            for (int i = 0; i < N; ++i) {
+                py::dict state;
+                state["day"] = result.day[i];
+                state["cash"] = result.cash[i];
+                state["total_asset"] = result.total_asset[i];
+                state["done"] = (result.done[i] != 0);
+                state["terminal"] = (result.terminal[i] != 0);
+                state["reward"] = result.reward[i];
+
+                py::array_t<int> shares(n_tic);
+                int* shares_ptr = shares.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    shares_ptr[t] = result.shares[i * n_tic + t];
+                }
+                state["shares"] = shares;
+
+                py::array_t<double> avg_buy_price(n_tic);
+                double* avg_ptr = avg_buy_price.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    avg_ptr[t] = result.avg_buy_price[i * n_tic + t];
+                }
+                state["avg_buy_price"] = avg_buy_price;
+
+                py::array_t<double> ohlc({n_tic, 4});
+                double* ohlc_ptr = ohlc.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < 4; ++k) {
+                        ohlc_ptr[t * 4 + k] = result.ohlc[(i * n_tic + t) * 4 + k];
+                    }
+                }
+                state["ohlc"] = ohlc;
+
+                py::array_t<double> indicators({n_tic, n_ind});
+                double* ind_ptr = indicators.mutable_data();
+                for (int t = 0; t < n_tic; ++t) {
+                    for (int k = 0; k < n_ind; ++k) {
+                        ind_ptr[t * n_ind + k] = result.indicators[(i * n_tic + t) * n_ind + k];
+                    }
+                }
+                state["indicators"] = indicators;
+
+                state["tickers"] = tickers[i];
+
+                if (n_macro > 0) {
+                    py::array_t<double> macro_ohlc({n_macro, 4});
+                    double* m_ohlc_ptr = macro_ohlc.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < 4; ++k) {
+                            m_ohlc_ptr[m * 4 + k] = result.macro_ohlc[(i * n_macro + m) * 4 + k];
+                        }
+                    }
+                    state["macro_ohlc"] = macro_ohlc;
+
+                    py::array_t<double> macro_ind({n_macro, n_ind});
+                    double* m_ind_ptr = macro_ind.mutable_data();
+                    for (int m = 0; m < n_macro; ++m) {
+                        for (int k = 0; k < n_ind; ++k) {
+                            m_ind_ptr[m * n_ind + k] = result.macro_indicators[(i * n_macro + m) * n_ind + k];
+                        }
+                    }
+                    state["macro_indicators"] = macro_ind;
+                }
+
+                states.append(state);
+            }
+            return states;
+        }, py::arg("indices"), py::arg("seeds"),
+           "Reset only specified environment indices. indices: List[int], seeds: np.array of int64")
+
+        // Auto-reset control
+        .def("set_auto_reset", &fast_finrl::VecFastFinRL::set_auto_reset, py::arg("enabled"),
+             "Enable or disable auto-reset when environments are done")
+        .def("auto_reset", &fast_finrl::VecFastFinRL::auto_reset,
+             "Get current auto-reset setting")
+
+        // Accessor methods
+        .def("num_envs", &fast_finrl::VecFastFinRL::num_envs, "Number of environments")
+        .def("n_tickers", &fast_finrl::VecFastFinRL::n_tickers, "Number of tickers per env")
+        .def("n_indicators", &fast_finrl::VecFastFinRL::n_indicators, "Number of indicators")
+        .def("n_macro", &fast_finrl::VecFastFinRL::n_macro, "Number of macro tickers")
+        .def("get_all_tickers", &fast_finrl::VecFastFinRL::get_all_tickers, "Get all available tickers")
+        .def("get_macro_tickers", &fast_finrl::VecFastFinRL::get_macro_tickers, "Get macro tickers")
+        .def("get_tickers", &fast_finrl::VecFastFinRL::get_tickers, "Get tickers for each env");
+
+    // VecReplayBuffer - Vectorized replay buffer for N environments
+    py::class_<fast_finrl::VecReplayBuffer>(m, "VecReplayBuffer")
+        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size) {
+            return std::make_unique<fast_finrl::VecReplayBuffer>(
+                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size);
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
+           "Create VecReplayBuffer for vectorized environments")
+
+        // add_batch - primary interface for VecFastFinRL
+        .def("add_batch", [](fast_finrl::VecReplayBuffer& self,
+                             const py::list& states,
+                             py::array_t<double, py::array::c_style> actions_arr,
+                             const py::list& rewards_list,
+                             const py::list& next_states,
+                             const py::list& dones_list) {
+            int num_envs = static_cast<int>(py::len(states));
+            if (num_envs == 0) return;
+
+            auto actions_buf = actions_arr.request();
+            const double* actions = static_cast<const double*>(actions_buf.ptr);
+            int n_tickers = static_cast<int>(actions_buf.shape[1]);
+
+            // Extract from states
+            std::vector<int> env_ids(num_envs);
+            std::vector<int> state_days(num_envs);
+            std::vector<int> next_state_days(num_envs);
+            std::vector<std::vector<std::string>> tickers_list(num_envs);
+            std::vector<double> state_cash(num_envs);
+            std::vector<double> next_state_cash(num_envs);
+            std::vector<int> state_shares_flat(num_envs * n_tickers);
+            std::vector<int> next_state_shares_flat(num_envs * n_tickers);
+            std::vector<double> state_avg_flat(num_envs * n_tickers);
+            std::vector<double> next_state_avg_flat(num_envs * n_tickers);
+            std::vector<std::vector<double>> rewards(num_envs);
+            std::vector<bool> dones(num_envs);
+            std::vector<bool> terminals(num_envs);
+
+            for (int i = 0; i < num_envs; ++i) {
+                py::object s = states[i];
+                py::object ns = next_states[i];
+
+                env_ids[i] = i;  // Default env_id = index
+                state_days[i] = s.attr("day").cast<int>();
+                next_state_days[i] = ns.attr("day").cast<int>();
+                tickers_list[i] = s.attr("tickers").cast<std::vector<std::string>>();
+                state_cash[i] = s.attr("cash").cast<double>();
+                next_state_cash[i] = ns.attr("cash").cast<double>();
+
+                // shares
+                auto s_shares = s.attr("shares").cast<py::array_t<int>>();
+                auto ns_shares = ns.attr("shares").cast<py::array_t<int>>();
+                auto s_shares_ptr = s_shares.data();
+                auto ns_shares_ptr = ns_shares.data();
+
+                // avg_buy_price
+                auto s_avg = s.attr("avg_buy_price").cast<py::array_t<double>>();
+                auto ns_avg = ns.attr("avg_buy_price").cast<py::array_t<double>>();
+                auto s_avg_ptr = s_avg.data();
+                auto ns_avg_ptr = ns_avg.data();
+
+                for (int j = 0; j < n_tickers; ++j) {
+                    state_shares_flat[i * n_tickers + j] = s_shares_ptr[j];
+                    next_state_shares_flat[i * n_tickers + j] = ns_shares_ptr[j];
+                    state_avg_flat[i * n_tickers + j] = s_avg_ptr[j];
+                    next_state_avg_flat[i * n_tickers + j] = ns_avg_ptr[j];
+                }
+
+                // Rewards - handle scalar or list
+                py::object r = rewards_list[i];
+                if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
+                    rewards[i] = r.cast<std::vector<double>>();
+                } else {
+                    rewards[i] = {r.cast<double>()};
+                }
+
+                dones[i] = dones_list[i].cast<bool>();
+                terminals[i] = ns.attr("terminal").cast<bool>();
+            }
+
+            self.add_batch(
+                num_envs, env_ids, state_days, next_state_days, tickers_list,
+                state_cash, next_state_cash,
+                state_shares_flat.data(), next_state_shares_flat.data(),
+                state_avg_flat.data(), next_state_avg_flat.data(),
+                actions, rewards, dones, terminals, n_tickers
+            );
+        }, py::arg("states"), py::arg("actions"), py::arg("rewards"),
+           py::arg("next_states"), py::arg("dones"),
+           "Add batch of N transitions from VecFastFinRL")
+
+        // sample - same interface as ReplayBuffer
+        .def("sample", [](const fast_finrl::VecReplayBuffer& self, int h, std::optional<size_t> batch_size) -> py::tuple {
+            using Batch = fast_finrl::VecReplayBuffer::SampleBatch;
+            std::shared_ptr<Batch> holder = std::make_shared<Batch>(
+                batch_size ? self.sample(h, *batch_size) : self.sample(h)
+            );
+
+            const int B = holder->batch_size;
+            const int T = h + 1;
+            const int n_ind = holder->n_indicators;
+            const int n_tic = holder->n_tickers;
+
+            auto make_capsule = [holder]() {
+                return py::capsule(new std::shared_ptr<Batch>(holder),
+                    [](void* p) { delete static_cast<std::shared_ptr<Batch>*>(p); });
+            };
+
+            py::dict s_dict, s_next_dict;
+            py::object s_mask_dict = py::none();
+            py::object s_next_mask_dict = py::none();
+
+            if (h > 0) {
+                s_mask_dict = py::dict();
+                s_next_mask_dict = py::dict();
+            }
+
+            // Build per-ticker data
+            for (const auto& ticker : holder->tickers) {
+                py::dict td, td_next;
+
+                td["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->s_ohlc[ticker].data(), make_capsule());
+
+                td["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->s_indicators[ticker].data(), make_capsule());
+
+                td_next["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->s_next_ohlc[ticker].data(), make_capsule());
+
+                td_next["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->s_next_indicators[ticker].data(), make_capsule());
+
+                s_dict[py::str(ticker)] = td;
+                s_next_dict[py::str(ticker)] = td_next;
+
+                if (h > 0) {
+                    py::cast<py::dict>(s_mask_dict)[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->s_mask[ticker].data(), make_capsule());
+                    py::cast<py::dict>(s_next_mask_dict)[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->s_next_mask[ticker].data(), make_capsule());
+                }
+            }
+
+            // Macro tickers
+            py::dict macro_dict, macro_next_dict;
+            py::dict macro_mask_dict, macro_next_mask_dict;
+
+            for (const std::string& ticker : holder->macro_tickers) {
+                py::dict td, td_next;
+
+                td["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->macro_ohlc[ticker].data(), make_capsule());
+
+                td["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->macro_indicators[ticker].data(), make_capsule());
+
+                td_next["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->macro_next_ohlc[ticker].data(), make_capsule());
+
+                td_next["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->macro_next_indicators[ticker].data(), make_capsule());
+
+                macro_dict[py::str(ticker)] = td;
+                macro_next_dict[py::str(ticker)] = td_next;
+
+                if (h > 0) {
+                    macro_mask_dict[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->macro_mask[ticker].data(), make_capsule());
+                    macro_next_mask_dict[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->macro_next_mask[ticker].data(), make_capsule());
+                }
+            }
+
+            // env_ids [B]
+            py::array_t<int> env_ids(B);
+            int* env_ids_ptr = env_ids.mutable_data();
+            for (int i = 0; i < B; ++i) {
+                env_ids_ptr[i] = holder->env_ids[i];
+            }
+
+            // Actions [B, n_tickers]
+            py::array_t<double> actions({B, n_tic},
+                {n_tic * sizeof(double), sizeof(double)},
+                holder->actions.data(), make_capsule());
+
+            // Rewards [B, n_objectives]
+            int n_obj = holder->n_objectives;
+            py::array_t<double> rewards({B, n_obj});
+            double* r_ptr = rewards.mutable_data();
+            for (int i = 0; i < B; ++i) {
+                for (int j = 0; j < n_obj; ++j) {
+                    r_ptr[i * n_obj + j] = holder->rewards[i][j];
+                }
+            }
+
+            // Dones [B, 1]
+            py::array_t<bool> dones({B, 1});
+            bool* dones_ptr = dones.mutable_data();
+            for (int i = 0; i < B; ++i) {
+                dones_ptr[i] = holder->dones[i];
+            }
+
+            // Portfolio state
+            py::array_t<double> state_cash({B}, {sizeof(double)},
+                holder->state_cash.data(), make_capsule());
+            py::array_t<double> next_state_cash({B}, {sizeof(double)},
+                holder->next_state_cash.data(), make_capsule());
+            py::array_t<int> state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
+                holder->state_shares.data(), make_capsule());
+            py::array_t<int> next_state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
+                holder->next_state_shares.data(), make_capsule());
+            py::array_t<double> state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+                holder->state_avg_buy_price.data(), make_capsule());
+            py::array_t<double> next_state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+                holder->next_state_avg_buy_price.data(), make_capsule());
+
+            // Build portfolio dicts
+            py::dict portfolio, next_portfolio;
+            portfolio["cash"] = state_cash;
+            portfolio["shares"] = state_shares;
+            portfolio["avg_buy_price"] = state_avg;
+            next_portfolio["cash"] = next_state_cash;
+            next_portfolio["shares"] = next_state_shares;
+            next_portfolio["avg_buy_price"] = next_state_avg;
+
+            // Metadata
+            s_dict["indicator_names"] = holder->indicator_names;
+            s_dict["tickers"] = holder->tickers;
+            s_dict["portfolio"] = portfolio;
+            s_dict["macro"] = macro_dict;
+            s_dict["macro_tickers"] = holder->macro_tickers;
+            s_dict["env_ids"] = env_ids;
+
+            s_next_dict["indicator_names"] = holder->indicator_names;
+            s_next_dict["tickers"] = holder->tickers;
+            s_next_dict["portfolio"] = next_portfolio;
+            s_next_dict["macro"] = macro_next_dict;
+            s_next_dict["macro_tickers"] = holder->macro_tickers;
+
+            if (h > 0 && holder->n_macro_tickers > 0) {
+                py::cast<py::dict>(s_mask_dict)["macro"] = macro_mask_dict;
+                py::cast<py::dict>(s_next_mask_dict)["macro"] = macro_next_mask_dict;
+            }
+
+            return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
+        }, py::arg("h"), py::arg("batch_size") = py::none(),
+           "Sample batch with env_ids. Returns (s, a, r, s', done, s_mask, s'_mask)")
+
+        .def("size", &fast_finrl::VecReplayBuffer::size, "Current buffer size")
+        .def("capacity", &fast_finrl::VecReplayBuffer::capacity, "Buffer capacity")
+        .def("clear", &fast_finrl::VecReplayBuffer::clear, "Clear buffer")
+        .def("save", &fast_finrl::VecReplayBuffer::save, py::arg("path"), "Save buffer to file")
+        .def("load", &fast_finrl::VecReplayBuffer::load, py::arg("path"), "Load buffer from file");
 }

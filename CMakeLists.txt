@@ -17,13 +17,6 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 # FetchContent for dependencies
 include(FetchContent)
 
-# fmt library (for <format> polyfill on older compilers)
-FetchContent_Declare(
-    fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 10.2.1
-)
-
 # hosseinmoein/DataFrame
 FetchContent_Declare(
     DataFrame
@@ -64,6 +57,8 @@ add_library(fast_finrl_lib
     src/DataLoader.cpp
     src/StateSerializer.cpp
     src/ReplayBuffer.cpp
+    src/VecFastFinRL.cpp
+    src/VecReplayBuffer.cpp
 )
 target_include_directories(fast_finrl_lib PUBLIC include)
 set_target_properties(fast_finrl_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
