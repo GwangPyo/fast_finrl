@@ -903,11 +903,18 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
     // VecReplayBuffer - Vectorized replay buffer for N environments
     py::class_<fast_finrl::VecReplayBuffer>(m, "VecReplayBuffer")
+        // Constructor from FastFinRL
         .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size) {
             return std::make_unique<fast_finrl::VecReplayBuffer>(
                 std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
-           "Create VecReplayBuffer for vectorized environments")
+           "Create VecReplayBuffer from FastFinRL instance")
+
+        // Constructor from VecFastFinRL
+        .def(py::init([](fast_finrl::VecFastFinRL& vec_env, size_t capacity, size_t batch_size) {
+            return std::make_unique<fast_finrl::VecReplayBuffer>(vec_env, capacity, batch_size);
+        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
+           "Create VecReplayBuffer from VecFastFinRL instance")
 
         // add_batch - primary interface for VecFastFinRL
         .def("add_batch", [](fast_finrl::VecReplayBuffer& self,

@@ -58,6 +58,7 @@ public:
     set<string> get_all_tickers() const { return base_env_->get_all_tickers(); }
     const vector<string>& get_macro_tickers() const { return base_env_->get_macro_tickers(); }
     const vector<vector<string>>& get_tickers() const { return tickers_; }
+    shared_ptr<const FastFinRL> get_base_env() const { return base_env_; }
 
     // Configuration (read-only after construction)
     const FastFinRLConfig& config() const { return config_; }

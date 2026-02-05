@@ -44,6 +44,11 @@ public:
                              size_t capacity = 1000000,
                              size_t batch_size = 256);
 
+    // Constructor from VecFastFinRL (uses internal base_env)
+    explicit VecReplayBuffer(const VecFastFinRL& vec_env,
+                             size_t capacity = 1000000,
+                             size_t batch_size = 256);
+
     // Add single transition
     void add(const VecStoredTransition& transition);
 

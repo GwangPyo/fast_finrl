@@ -385,20 +385,20 @@ Each state dict in the returned list:
 Replay buffer for vectorized environments. Stores transitions with env_id for tracking.
 
 ```python
-from fast_finrl_py import FastFinRL, VecReplayBuffer
+from fast_finrl_py import VecFastFinRL, VecReplayBuffer
 
-env = FastFinRL("data/stock.csv")  # For market data lookup
-buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
+vec_env = VecFastFinRL("data/stock.csv")
+buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256)
 ```
 
 ### Constructor
 
 ```python
-VecReplayBuffer(
-    env,                    # FastFinRL instance (for market data lookup)
-    capacity=1_000_000,     # Max transitions to store
-    batch_size=256          # Default batch size for sample()
-)
+# From VecFastFinRL (recommended)
+VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256)
+
+# From FastFinRL (also supported)
+VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
 ```
 
 ### add_batch(states, actions, rewards, next_states, dones)
@@ -488,13 +488,12 @@ buffer.load("path.json")   # Load buffer from JSON file
 ## Example: VecFastFinRL Training Loop
 
 ```python
-from fast_finrl_py import FastFinRL, VecFastFinRL, VecReplayBuffer
+from fast_finrl_py import VecFastFinRL, VecReplayBuffer
 import numpy as np
 
 # Setup
-env = FastFinRL("train.csv")
 vec_env = VecFastFinRL("train.csv", auto_reset=True)
-buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
+buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256)
 
 N = 64
 all_tickers = list(vec_env.get_all_tickers())
