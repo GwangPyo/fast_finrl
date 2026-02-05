@@ -115,7 +115,8 @@ public:
         std::vector<double> state_avg_buy_price;
         std::vector<double> next_state_avg_buy_price;
 
-        std::vector<std::string> tickers;
+        std::vector<std::vector<std::string>> tickers;  // [batch][n_tickers] - per-sample tickers
+        std::vector<std::string> unique_tickers;          // union of all tickers in batch
         std::vector<std::string> macro_tickers;
         std::vector<std::string> indicator_names;
         int batch_size;

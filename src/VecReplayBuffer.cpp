@@ -137,9 +137,20 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int h, size_t batch_size) c
 
     if (actual_batch == 0) return result;
 
-    // Get first transition to determine structure
+    // Collect per-sample tickers and build unique ticker set
+    std::set<std::string> unique_ticker_set;
+    result.tickers.resize(actual_batch);
+    for (size_t i = 0; i < actual_batch; ++i) {
+        const auto& t = buffer_[indices[i]];
+        result.tickers[i] = t.tickers;
+        for (const auto& tic : t.tickers) {
+            unique_ticker_set.insert(tic);
+        }
+    }
+    result.unique_tickers.assign(unique_ticker_set.begin(), unique_ticker_set.end());
+
+    // Get structure from first transition
     const auto& first_t = buffer_[indices[0]];
-    result.tickers = first_t.tickers;
     result.n_tickers = static_cast<int>(first_t.tickers.size());
     result.n_objectives = static_cast<int>(first_t.rewards.size());
 
@@ -167,8 +178,8 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int h, size_t batch_size) c
     result.state_avg_buy_price.resize(actual_batch * n_tickers);
     result.next_state_avg_buy_price.resize(actual_batch * n_tickers);
 
-    // Allocate per-ticker market data
-    for (const auto& ticker : result.tickers) {
+    // Allocate per-ticker market data (for all unique tickers)
+    for (const auto& ticker : result.unique_tickers) {
         result.s_ohlc[ticker].resize(actual_batch * time_len * 4);
         result.s_indicators[ticker].resize(actual_batch * time_len * n_ind);
         result.s_next_ohlc[ticker].resize(actual_batch * time_len * 4);
@@ -198,9 +209,9 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int h, size_t batch_size) c
     std::map<std::string, std::vector<std::pair<size_t, int>>> macro_samples;
     std::map<std::string, std::vector<std::pair<size_t, int>>> macro_next_samples;
 
-    // Pre-compute global indices for tickers
+    // Pre-compute global indices for all unique tickers
     std::map<std::string, size_t> ticker_global_idx;
-    for (const auto& ticker : result.tickers) {
+    for (const auto& ticker : result.unique_tickers) {
         ticker_global_idx[ticker] = env_->get_ticker_global_idx(ticker);
     }
     for (const auto& ticker : cached_macro_tickers_) {
@@ -240,20 +251,22 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int h, size_t batch_size) c
         }
     }
 
-    // Batch fetch market data for each ticker
-    for (const auto& ticker : result.tickers) {
-        env_->fill_market_batch(
-            ticker_samples[ticker], h,
-            result.s_ohlc[ticker].data(),
-            result.s_indicators[ticker].data(),
-            h > 0 ? result.s_mask[ticker].data() : nullptr
-        );
-        env_->fill_market_batch(
-            ticker_next_samples[ticker], h,
-            result.s_next_ohlc[ticker].data(),
-            result.s_next_indicators[ticker].data(),
-            h > 0 ? result.s_next_mask[ticker].data() : nullptr
-        );
+    // Batch fetch market data for each unique ticker
+    for (const auto& ticker : result.unique_tickers) {
+        if (!ticker_samples[ticker].empty()) {
+            env_->fill_market_batch(
+                ticker_samples[ticker], h,
+                result.s_ohlc[ticker].data(),
+                result.s_indicators[ticker].data(),
+                h > 0 ? result.s_mask[ticker].data() : nullptr
+            );
+            env_->fill_market_batch(
+                ticker_next_samples[ticker], h,
+                result.s_next_ohlc[ticker].data(),
+                result.s_next_indicators[ticker].data(),
+                h > 0 ? result.s_next_mask[ticker].data() : nullptr
+            );
+        }
     }
 
     // Batch fetch macro tickers

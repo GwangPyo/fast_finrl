@@ -1024,8 +1024,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 s_next_mask_dict = py::dict();
             }
 
-            // Build per-ticker data
-            for (const auto& ticker : holder->tickers) {
+            // Build per-ticker data (iterate over unique_tickers)
+            for (const auto& ticker : holder->unique_tickers) {
                 py::dict td, td_next;
 
                 td["ohlc"] = py::array_t<double>(
@@ -1155,14 +1155,16 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             // Metadata
             s_dict["indicator_names"] = holder->indicator_names;
-            s_dict["tickers"] = holder->tickers;
+            s_dict["tickers"] = holder->tickers;  // [batch][n_tickers] - per-sample tickers
+            s_dict["unique_tickers"] = holder->unique_tickers;  // union of all tickers
             s_dict["portfolio"] = portfolio;
             s_dict["macro"] = macro_dict;
             s_dict["macro_tickers"] = holder->macro_tickers;
             s_dict["env_ids"] = env_ids;
 
             s_next_dict["indicator_names"] = holder->indicator_names;
-            s_next_dict["tickers"] = holder->tickers;
+            s_next_dict["tickers"] = holder->tickers;  // [batch][n_tickers]
+            s_next_dict["unique_tickers"] = holder->unique_tickers;
             s_next_dict["portfolio"] = next_portfolio;
             s_next_dict["macro"] = macro_next_dict;
             s_next_dict["macro_tickers"] = holder->macro_tickers;

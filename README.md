@@ -462,7 +462,8 @@ s, a, r, s_next, done, s_mask, s_next_mask = buffer.sample(h=10, batch_size=256)
 | `s["portfolio"]["shares"]` | np.ndarray | (batch, n_tickers) | Share holdings |
 | `s["portfolio"]["avg_buy_price"]` | np.ndarray | (batch, n_tickers) | Avg buy prices |
 | `s["env_ids"]` | np.ndarray | (batch,) | Original env indices |
-| `s["tickers"]` | List[str] | (n_tickers,) | Ticker names |
+| `s["tickers"]` | List[List[str]] | (batch, n_tickers) | Per-sample ticker names |
+| `s["unique_tickers"]` | List[str] | varies | Union of all tickers in batch |
 | `s["macro_tickers"]` | List[str] | (n_macro,) | Macro ticker names |
 | `s["indicator_names"]` | List[str] | (n_ind,) | Indicator names |
 
