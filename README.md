@@ -43,9 +43,12 @@ FastFinRL(
     sell_cost_pct=0.01,            # Sell transaction fee
     stop_loss_tolerance=0.8,       # Stop-loss threshold (0.8 = sell at 20% loss)
     bidding="default",             # Fill price policy
-    tech_indicator_list=[]         # Indicators to use (empty = auto-detect)
+    tech_indicator_list=[]         # Indicators to use (empty = auto-detect from CSV columns)
 )
 ```
+
+**Notes:**
+- `tech_indicator_list`: Order determines indicator array order in `get_market_window_numpy()`. Empty list auto-detects all non-OHLC numeric columns from CSV.
 
 **Bidding options:**
 | Value | Buy Price | Sell Price |
@@ -66,7 +69,7 @@ Initialize episode.
 state = env.reset(["AAPL", "GOOGL"], seed=42, shifted_start=100)
 ```
 
-- `ticker_list`: Tickers to trade
+- `ticker_list`: Tickers to trade. **This order determines action order in step()**
 - `seed`: Random seed (-1 = previous seed + 1)
 - `shifted_start`: Delay start by N days
 
@@ -75,10 +78,13 @@ state = env.reset(["AAPL", "GOOGL"], seed=42, shifted_start=100)
 Execute one step.
 
 ```python
-state = env.step([0.5, -0.3])  # Buy AAPL, Sell GOOGL
+# Order matches ticker_list from reset()
+# If reset(["AAPL", "GOOGL"], ...), then:
+state = env.step([0.5, -0.3])  # actions[0]=AAPL, actions[1]=GOOGL
 ```
 
-- `actions`: List of values in [-1, 1]. Positive=buy, Negative=sell, 0=hold
+- `actions`: List of values in [-1, 1], **same order as ticker_list in reset()**
+- Positive=buy, Negative=sell, 0=hold
 
 ### get_market_window_numpy(ticker_list, day, h, future)
 
