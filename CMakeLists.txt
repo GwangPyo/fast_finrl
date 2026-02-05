@@ -5,53 +5,33 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Release build with O3 optimization
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
-# OpenMP disabled - DataFrame library has #pragma omp simd in lambdas that conflict
-# find_package(OpenMP)
-
-# FetchContent for dependencies
 include(FetchContent)
 
-# hosseinmoein/DataFrame
+# FetchContent - system package 없는 라이브러리
 FetchContent_Declare(
     DataFrame
     GIT_REPOSITORY https://github.com/hosseinmoein/DataFrame.git
     GIT_TAG master
 )
-
-# nlohmann/json
-FetchContent_Declare(
-    json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
-)
-
-# GoogleTest
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
-)
-
-# pybind11
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11.git
     GIT_TAG v2.11.1
 )
+FetchContent_MakeAvailable(DataFrame pybind11)
 
-FetchContent_MakeAvailable(DataFrame json googletest pybind11)
-
-# Required: Arrow/Parquet for fast file loading
+# System packages
+find_package(nlohmann_json REQUIRED)
+find_package(TBB REQUIRED)
 find_package(Arrow REQUIRED)
 find_package(Parquet REQUIRED)
 
-# Main library
+# Library
 add_library(fast_finrl_lib
     src/FastFinRL.cpp
     src/DataLoader.cpp
@@ -61,31 +41,16 @@ add_library(fast_finrl_lib
     src/VecReplayBuffer.cpp
 )
 target_include_directories(fast_finrl_lib PUBLIC include)
-set_target_properties(fast_finrl_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
-find_package(TBB REQUIRED)
-target_link_libraries(fast_finrl_lib PUBLIC DataFrame::DataFrame nlohmann_json::nlohmann_json TBB::tbb)
-
-# Link Arrow/Parquet
-target_link_libraries(fast_finrl_lib PUBLIC Arrow::arrow_shared Parquet::parquet_shared)
-
-# Main executable
-add_executable(fast_finrl main.cpp)
-target_link_libraries(fast_finrl PRIVATE fast_finrl_lib)
-
-# Tests
-enable_testing()
-add_executable(fast_finrl_tests tests/test_fast_finrl.cpp)
-target_link_libraries(fast_finrl_tests PRIVATE fast_finrl_lib GTest::gtest_main)
-include(GoogleTest)
-gtest_discover_tests(fast_finrl_tests)
+target_link_libraries(fast_finrl_lib PUBLIC
+    DataFrame::DataFrame
+    nlohmann_json::nlohmann_json
+    TBB::tbb
+    Arrow::arrow_shared
+    Parquet::parquet_shared
+)
 
 # Python bindings
 pybind11_add_module(fast_finrl_py src/bindings.cpp)
 target_link_libraries(fast_finrl_py PRIVATE fast_finrl_lib)
 
-# Install Python module (for pip install)
 install(TARGETS fast_finrl_py LIBRARY DESTINATION .)
-
-# CSV to Parquet conversion tool
-add_executable(csv_to_parquet tools/csv_to_parquet.cpp)
-target_link_libraries(csv_to_parquet PRIVATE Arrow::arrow_shared Parquet::parquet_shared)

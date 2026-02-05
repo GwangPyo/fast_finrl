@@ -10,7 +10,15 @@ pip install fast-finrl
 
 Build from source:
 ```bash
-sudo apt install -y cmake g++ libtbb-dev  # Ubuntu
+# Ubuntu/Debian - install dependencies
+sudo apt install -y \
+    cmake g++ \
+    nlohmann-json3-dev \
+    pybind11-dev \
+    libtbb-dev \
+    libarrow-dev \
+    libparquet-dev
+
 pip install .
 ```
 

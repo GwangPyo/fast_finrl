@@ -1,2 +1,0 @@
-/usr/bin/ar qc libDataFrame.a CMakeFiles/DataFrame.dir/src/Utils/DateTime.cc.o
-/usr/bin/ranlib libDataFrame.a
