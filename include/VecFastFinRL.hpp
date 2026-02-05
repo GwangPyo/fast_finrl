@@ -50,12 +50,17 @@ public:
     // Auto-reset control
     void set_auto_reset(bool enabled) { auto_reset_ = enabled; }
 
+    // Return format control
+    void set_return_format(ReturnFormat fmt) { return_format_ = fmt; }
+    ReturnFormat return_format() const { return return_format_; }
+
     // Accessors
     int num_envs() const { return num_envs_; }
     int n_tickers() const { return n_tickers_; }
     int n_indicators() const { return n_indicators_; }
     int n_macro() const { return n_macro_; }
     set<string> get_all_tickers() const { return base_env_->get_all_tickers(); }
+    set<string> get_indicator_names() const { return base_env_->get_indicator_names(); }
     const vector<string>& get_macro_tickers() const { return base_env_->get_macro_tickers(); }
     const vector<vector<string>>& get_tickers() const { return tickers_; }
     shared_ptr<const FastFinRL> get_base_env() const { return base_env_; }
@@ -69,6 +74,7 @@ private:
     shared_ptr<FastFinRL> base_env_;
     FastFinRLConfig config_;
     bool auto_reset_ = true;
+    ReturnFormat return_format_ = ReturnFormat::Json;
 
     // Environment dimensions
     int num_envs_ = 0;

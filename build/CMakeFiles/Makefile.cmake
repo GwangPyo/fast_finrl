@@ -156,6 +156,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/fast_finrl.dir/DependInfo.cmake"
   "CMakeFiles/fast_finrl_tests.dir/DependInfo.cmake"
   "CMakeFiles/fast_finrl_py.dir/DependInfo.cmake"
+  "CMakeFiles/csv_to_parquet.dir/DependInfo.cmake"
   "_deps/dataframe-build/CMakeFiles/DataFrame.dir/DependInfo.cmake"
   "_deps/googletest-build/googlemock/CMakeFiles/gmock.dir/DependInfo.cmake"
   "_deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/DependInfo.cmake"

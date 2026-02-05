@@ -224,6 +224,19 @@ fast_finrl_py/fast:
 .PHONY : fast_finrl_py/fast
 
 #=============================================================================
+# Target rules for targets named csv_to_parquet
+
+# Build rule for target.
+csv_to_parquet: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 csv_to_parquet
+.PHONY : csv_to_parquet
+
+# fast build rule for target.
+csv_to_parquet/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/build
+.PHONY : csv_to_parquet/fast
+
+#=============================================================================
 # Target rules for targets named DataFrame
 
 # Build rule for target.
@@ -312,6 +325,30 @@ main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl.dir/build.make CMakeFiles/fast_finrl.dir/main.cpp.s
 .PHONY : main.cpp.s
 
+src/DataLoader.o: src/DataLoader.cpp.o
+.PHONY : src/DataLoader.o
+
+# target to build an object file
+src/DataLoader.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o
+.PHONY : src/DataLoader.cpp.o
+
+src/DataLoader.i: src/DataLoader.cpp.i
+.PHONY : src/DataLoader.i
+
+# target to preprocess a source file
+src/DataLoader.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.i
+.PHONY : src/DataLoader.cpp.i
+
+src/DataLoader.s: src/DataLoader.cpp.s
+.PHONY : src/DataLoader.s
+
+# target to generate assembly for a file
+src/DataLoader.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.s
+.PHONY : src/DataLoader.cpp.s
+
 src/FastFinRL.o: src/FastFinRL.cpp.o
 .PHONY : src/FastFinRL.o
 
@@ -335,6 +372,102 @@ src/FastFinRL.s: src/FastFinRL.cpp.s
 src/FastFinRL.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s
 .PHONY : src/FastFinRL.cpp.s
+
+src/ReplayBuffer.o: src/ReplayBuffer.cpp.o
+.PHONY : src/ReplayBuffer.o
+
+# target to build an object file
+src/ReplayBuffer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o
+.PHONY : src/ReplayBuffer.cpp.o
+
+src/ReplayBuffer.i: src/ReplayBuffer.cpp.i
+.PHONY : src/ReplayBuffer.i
+
+# target to preprocess a source file
+src/ReplayBuffer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.i
+.PHONY : src/ReplayBuffer.cpp.i
+
+src/ReplayBuffer.s: src/ReplayBuffer.cpp.s
+.PHONY : src/ReplayBuffer.s
+
+# target to generate assembly for a file
+src/ReplayBuffer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.s
+.PHONY : src/ReplayBuffer.cpp.s
+
+src/StateSerializer.o: src/StateSerializer.cpp.o
+.PHONY : src/StateSerializer.o
+
+# target to build an object file
+src/StateSerializer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o
+.PHONY : src/StateSerializer.cpp.o
+
+src/StateSerializer.i: src/StateSerializer.cpp.i
+.PHONY : src/StateSerializer.i
+
+# target to preprocess a source file
+src/StateSerializer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.i
+.PHONY : src/StateSerializer.cpp.i
+
+src/StateSerializer.s: src/StateSerializer.cpp.s
+.PHONY : src/StateSerializer.s
+
+# target to generate assembly for a file
+src/StateSerializer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.s
+.PHONY : src/StateSerializer.cpp.s
+
+src/VecFastFinRL.o: src/VecFastFinRL.cpp.o
+.PHONY : src/VecFastFinRL.o
+
+# target to build an object file
+src/VecFastFinRL.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o
+.PHONY : src/VecFastFinRL.cpp.o
+
+src/VecFastFinRL.i: src/VecFastFinRL.cpp.i
+.PHONY : src/VecFastFinRL.i
+
+# target to preprocess a source file
+src/VecFastFinRL.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.i
+.PHONY : src/VecFastFinRL.cpp.i
+
+src/VecFastFinRL.s: src/VecFastFinRL.cpp.s
+.PHONY : src/VecFastFinRL.s
+
+# target to generate assembly for a file
+src/VecFastFinRL.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.s
+.PHONY : src/VecFastFinRL.cpp.s
+
+src/VecReplayBuffer.o: src/VecReplayBuffer.cpp.o
+.PHONY : src/VecReplayBuffer.o
+
+# target to build an object file
+src/VecReplayBuffer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o
+.PHONY : src/VecReplayBuffer.cpp.o
+
+src/VecReplayBuffer.i: src/VecReplayBuffer.cpp.i
+.PHONY : src/VecReplayBuffer.i
+
+# target to preprocess a source file
+src/VecReplayBuffer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.i
+.PHONY : src/VecReplayBuffer.cpp.i
+
+src/VecReplayBuffer.s: src/VecReplayBuffer.cpp.s
+.PHONY : src/VecReplayBuffer.s
+
+# target to generate assembly for a file
+src/VecReplayBuffer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_lib.dir/build.make CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.s
+.PHONY : src/VecReplayBuffer.cpp.s
 
 src/bindings.o: src/bindings.cpp.o
 .PHONY : src/bindings.o
@@ -384,6 +517,30 @@ tests/test_fast_finrl.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/fast_finrl_tests.dir/build.make CMakeFiles/fast_finrl_tests.dir/tests/test_fast_finrl.cpp.s
 .PHONY : tests/test_fast_finrl.cpp.s
 
+tools/csv_to_parquet.o: tools/csv_to_parquet.cpp.o
+.PHONY : tools/csv_to_parquet.o
+
+# target to build an object file
+tools/csv_to_parquet.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.o
+.PHONY : tools/csv_to_parquet.cpp.o
+
+tools/csv_to_parquet.i: tools/csv_to_parquet.cpp.i
+.PHONY : tools/csv_to_parquet.i
+
+# target to preprocess a source file
+tools/csv_to_parquet.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.i
+.PHONY : tools/csv_to_parquet.cpp.i
+
+tools/csv_to_parquet.s: tools/csv_to_parquet.cpp.s
+.PHONY : tools/csv_to_parquet.s
+
+# target to generate assembly for a file
+tools/csv_to_parquet.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/csv_to_parquet.dir/build.make CMakeFiles/csv_to_parquet.dir/tools/csv_to_parquet.cpp.s
+.PHONY : tools/csv_to_parquet.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -398,6 +555,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... DataFrame"
+	@echo "... csv_to_parquet"
 	@echo "... fast_finrl"
 	@echo "... fast_finrl_lib"
 	@echo "... fast_finrl_py"
@@ -409,15 +567,33 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... src/DataLoader.o"
+	@echo "... src/DataLoader.i"
+	@echo "... src/DataLoader.s"
 	@echo "... src/FastFinRL.o"
 	@echo "... src/FastFinRL.i"
 	@echo "... src/FastFinRL.s"
+	@echo "... src/ReplayBuffer.o"
+	@echo "... src/ReplayBuffer.i"
+	@echo "... src/ReplayBuffer.s"
+	@echo "... src/StateSerializer.o"
+	@echo "... src/StateSerializer.i"
+	@echo "... src/StateSerializer.s"
+	@echo "... src/VecFastFinRL.o"
+	@echo "... src/VecFastFinRL.i"
+	@echo "... src/VecFastFinRL.s"
+	@echo "... src/VecReplayBuffer.o"
+	@echo "... src/VecReplayBuffer.i"
+	@echo "... src/VecReplayBuffer.s"
 	@echo "... src/bindings.o"
 	@echo "... src/bindings.i"
 	@echo "... src/bindings.s"
 	@echo "... tests/test_fast_finrl.o"
 	@echo "... tests/test_fast_finrl.i"
 	@echo "... tests/test_fast_finrl.s"
+	@echo "... tools/csv_to_parquet.o"
+	@echo "... tools/csv_to_parquet.i"
+	@echo "... tools/csv_to_parquet.s"
 .PHONY : help
 
 

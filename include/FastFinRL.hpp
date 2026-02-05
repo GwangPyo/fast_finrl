@@ -16,6 +16,12 @@ using namespace std;
 
 namespace fast_finrl {
 
+// Return format for state serialization
+enum class ReturnFormat {
+    Json,  // dict/List[dict] with nested structure
+    Vec    // dict with batched numpy arrays
+};
+
 // Configuration struct for FastFinRL constructor
 struct FastFinRLConfig {
     double initial_amount = 30000.0;
@@ -28,6 +34,7 @@ struct FastFinRLConfig {
     int64_t initial_seed = 0;
     vector<string> tech_indicator_list = {};  // empty = auto-detect from CSV
     vector<string> macro_tickers = {};        // tickers always included in state.macro
+    ReturnFormat return_format = ReturnFormat::Json;  // "json" or "vec"
 };
 
 class FastFinRL {
@@ -43,6 +50,7 @@ public:
     double stop_loss_tolerance;
     string bidding;
     string stop_loss_calculation;
+    ReturnFormat return_format = ReturnFormat::Json;
 
     // Constructor with configuration
     explicit FastFinRL(const string& csv_path, const FastFinRLConfig& config = FastFinRLConfig{});
@@ -107,6 +115,37 @@ public:
         int n_indicators;
     };
     MultiTickerWindowData get_market_window_multi(const vector<string>& ticker_list, int day, int h, int future) const;
+
+    // Batch fill for replay buffer optimization
+    // Fills multiple samples directly into pre-allocated arrays
+    // samples: [(global_ticker_idx, day), ...] - N samples
+    // ohlc_out: [N * time_len * 4] - pre-allocated
+    // ind_out: [N * time_len * n_ind] - pre-allocated
+    // mask_out: [N * time_len] - pre-allocated
+    void fill_market_batch(
+        const vector<pair<size_t, int>>& samples,  // [(global_idx, day), ...]
+        int h,  // history length (time_len = h + 1)
+        double* ohlc_out,
+        double* ind_out,
+        int* mask_out
+    ) const;
+
+    // Get global ticker index (for batch fill)
+    size_t get_ticker_global_idx(const string& ticker) const {
+        auto it = ticker_global_idx_.find(ticker);
+        if (it == ticker_global_idx_.end()) {
+            throw runtime_error("Ticker not found: " + ticker);
+        }
+        return it->second;
+    }
+
+    int get_ticker_first_day(const string& ticker) const {
+        auto it = ticker_first_day_.find(ticker);
+        if (it == ticker_first_day_.end()) return 0;
+        return it->second;
+    }
+
+    int get_n_indicators() const { return static_cast<int>(indicator_cols_.size()); }
 
 private:
     // DataFrame storage

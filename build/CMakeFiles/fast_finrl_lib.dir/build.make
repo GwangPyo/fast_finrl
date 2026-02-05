@@ -83,17 +83,97 @@ CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/FastFinRL.cpp -o CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.s
 
+CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o: CMakeFiles/fast_finrl_lib.dir/flags.make
+CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o: ../src/DataLoader.cpp
+CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/DataLoader.cpp
+
+CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/DataLoader.cpp > CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.i
+
+CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/DataLoader.cpp -o CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.s
+
+CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o: CMakeFiles/fast_finrl_lib.dir/flags.make
+CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o: ../src/StateSerializer.cpp
+CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/StateSerializer.cpp
+
+CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/StateSerializer.cpp > CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.i
+
+CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/StateSerializer.cpp -o CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.s
+
+CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o: CMakeFiles/fast_finrl_lib.dir/flags.make
+CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o: ../src/ReplayBuffer.cpp
+CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/ReplayBuffer.cpp
+
+CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/ReplayBuffer.cpp > CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.i
+
+CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/ReplayBuffer.cpp -o CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.s
+
+CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o: CMakeFiles/fast_finrl_lib.dir/flags.make
+CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o: ../src/VecFastFinRL.cpp
+CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecFastFinRL.cpp
+
+CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecFastFinRL.cpp > CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.i
+
+CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecFastFinRL.cpp -o CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.s
+
+CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o: CMakeFiles/fast_finrl_lib.dir/flags.make
+CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o: ../src/VecReplayBuffer.cpp
+CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o: CMakeFiles/fast_finrl_lib.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o -MF CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o.d -o CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o -c /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecReplayBuffer.cpp
+
+CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecReplayBuffer.cpp > CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.i
+
+CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/c/Users/necro/CLionProjects/fast_finrl/src/VecReplayBuffer.cpp -o CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.s
+
 # Object files for target fast_finrl_lib
 fast_finrl_lib_OBJECTS = \
-"CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o"
+"CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o" \
+"CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o" \
+"CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o" \
+"CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o" \
+"CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o" \
+"CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o"
 
 # External object files for target fast_finrl_lib
 fast_finrl_lib_EXTERNAL_OBJECTS =
 
 libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/FastFinRL.cpp.o
+libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/DataLoader.cpp.o
+libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/StateSerializer.cpp.o
+libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/ReplayBuffer.cpp.o
+libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/VecFastFinRL.cpp.o
+libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/src/VecReplayBuffer.cpp.o
 libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/build.make
 libfast_finrl_lib.a: CMakeFiles/fast_finrl_lib.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX static library libfast_finrl_lib.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX static library libfast_finrl_lib.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/fast_finrl_lib.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/fast_finrl_lib.dir/link.txt --verbose=$(VERBOSE)
 

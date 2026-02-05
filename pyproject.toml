@@ -34,7 +34,7 @@ Repository = "https://github.com/yourusername/fast_finrl"
 [tool.scikit-build]
 cmake.version = ">=3.22"
 cmake.build-type = "Release"
-wheel.packages = []
+wheel.packages = ["python/fast_finrl"]
 build-dir = "build/{wheel_tag}"
 
 [tool.scikit-build.cmake.define]

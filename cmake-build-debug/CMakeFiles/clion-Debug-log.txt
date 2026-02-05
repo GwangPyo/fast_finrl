@@ -14,7 +14,7 @@ This warning is for project developers.  Use -Wno-dev to suppress it.
 
 -- pybind11::lto disabled (problems with undefined symbols for MinGW for now)
 -- pybind11::thin_lto disabled (problems with undefined symbols for MinGW for now)
-CMake Error at CMakeLists.txt:58 (find_package):
+CMake Error at CMakeLists.txt:51 (find_package):
   By not providing "FindArrow.cmake" in CMAKE_MODULE_PATH this project has
   asked CMake to find a package configuration file provided by "Arrow", but
   CMake did not find one.

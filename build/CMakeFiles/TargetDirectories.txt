@@ -2,6 +2,7 @@
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/fast_finrl.dir
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/fast_finrl_tests.dir
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/fast_finrl_py.dir
+/mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/csv_to_parquet.dir
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/test.dir
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/edit_cache.dir
 /mnt/c/Users/necro/CLionProjects/fast_finrl/build/CMakeFiles/rebuild_cache.dir

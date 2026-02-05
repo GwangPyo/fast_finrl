@@ -10,6 +10,7 @@ namespace fast_finrl {
 VecFastFinRL::VecFastFinRL(const string& csv_path, const FastFinRLConfig& config)
     : config_(config)
     , auto_reset_(true)
+    , return_format_(config.return_format)
 {
     // Create base environment for shared market data
     base_env_ = make_shared<FastFinRL>(csv_path, config);
