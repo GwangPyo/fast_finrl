@@ -160,25 +160,92 @@ day,date,tic,open,high,low,close,volume,macd,rsi_14
 
 ---
 
+## ReplayBuffer
+
+C++ implementation of experience replay buffer with on-demand market data fetching.
+
+```python
+from fast_finrl_py import FastFinRL, ReplayBuffer
+
+env = FastFinRL("data/stock.csv")
+buffer = ReplayBuffer(env)  # capacity=1M, batch_size=256
+```
+
+### Constructor
+
+```python
+ReplayBuffer(
+    env,                    # FastFinRL instance
+    capacity=1_000_000,     # 100K (small), 1M (default), 5M (large)
+    batch_size=256          # Default batch size for sample()
+)
+```
+
+### add(state, action, reward, next_state, done)
+
+```python
+state = env.reset(tickers, seed=42)
+while not state["done"]:
+    action = model.predict(state)
+    next_state = env.step(action)
+
+    # Explicit interface
+    buffer.add(state, action, next_state["reward"], next_state, next_state["done"])
+
+    state = next_state
+```
+
+Multi-objective reward:
+```python
+reward = [return_reward, sharpe_reward, risk_penalty]
+buffer.add(state, action, reward, next_state, done)
+```
+
+### sample(h, batch_size=None)
+
+```python
+s, a, r, s_next, done, s_mask, s_next_mask = buffer.sample(h=20)
+```
+
+**Returns:**
+| Variable | Shape | Description |
+|----------|-------|-------------|
+| `s[ticker]["ohlc"]` | (batch, h+1, 4) | OHLC prices |
+| `s[ticker]["indicators"]` | (batch, h+1, n_ind) | Technical indicators |
+| `s["portfolio"]["cash"]` | (batch,) | Cash balance |
+| `s["portfolio"]["shares"]` | (batch, n_tickers) | Share holdings |
+| `a` | (batch, n_tickers) | Actions |
+| `r` | (batch, reward_size) | Rewards (always 2D) |
+| `done` | (batch, 1) | Done flags (always 2D) |
+| `s_mask[ticker]` | (batch, h+1) or None | Mask (None if h=0) |
+
+### save / load
+
+```python
+buffer.save("buffer.json")
+buffer.load("buffer.json")
+```
+
+---
+
 ## Example: Training Loop
 
 ```python
 env = FastFinRL("train.csv", initial_amount=100000, hmax=30)
+buffer = ReplayBuffer(env, capacity=1_000_000, batch_size=256)
 tickers = list(env.get_all_tickers())
 
-for episode in range(1000):
+# Collect experience
+for episode in range(100):
     state = env.reset(tickers, seed=episode)
+    while not state["done"]:
+        action = model.predict(state)
+        next_state = env.step(action)
+        buffer.add(state, action, next_state["reward"], next_state, next_state["done"])
+        state = next_state
 
-    while not state["done"] and not state["terminal"]:
-        # Get market data
-        window = env.get_market_window_numpy(tickers, state["day"], h=50, future=0)
-
-        # Model inference
-        actions = model(window)
-
-        # Step
-        state = env.step(actions)
-
-        # Train
-        model.train(state["reward"])
+# Train
+for step in range(10000):
+    s, a, r, s_next, done, s_mask, _ = buffer.sample(h=50)
+    loss = model.train(s, a, r, s_next, done)
 ```
