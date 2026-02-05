@@ -78,6 +78,14 @@ public:
         std::map<std::string, std::vector<double>> s_next_indicators;
         std::map<std::string, std::vector<int>> s_next_mask;
 
+        // Macro ticker market data
+        std::map<std::string, std::vector<double>> macro_ohlc;
+        std::map<std::string, std::vector<double>> macro_indicators;
+        std::map<std::string, std::vector<int>> macro_mask;
+        std::map<std::string, std::vector<double>> macro_next_ohlc;
+        std::map<std::string, std::vector<double>> macro_next_indicators;
+        std::map<std::string, std::vector<int>> macro_next_mask;
+
         std::vector<double> actions;                 // [batch * n_tickers]
         std::vector<std::vector<double>> rewards;    // [batch][n_objectives]
         std::vector<bool> dones;                     // [batch]
@@ -92,10 +100,12 @@ public:
         std::vector<double> next_state_avg_buy_price; // [batch * n_tickers]
 
         std::vector<std::string> tickers;
+        std::vector<std::string> macro_tickers;      // macro ticker list
         std::vector<std::string> indicator_names;
         int batch_size;
         int h;
         int n_tickers;
+        int n_macro_tickers = 0;
         int n_indicators;
     };
 

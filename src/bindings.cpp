@@ -53,7 +53,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          const std::string& bidding,
                          const std::string& stop_loss_calculation,
                          int64_t initial_seed,
-                         const std::vector<std::string>& tech_indicator_list) {
+                         const std::vector<std::string>& tech_indicator_list,
+                         const std::vector<std::string>& macro_tickers) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
             config.hmax = hmax;
@@ -64,6 +65,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.stop_loss_calculation = stop_loss_calculation;
             config.initial_seed = initial_seed;
             config.tech_indicator_list = tech_indicator_list;
+            config.macro_tickers = macro_tickers;
             return std::make_unique<fast_finrl::FastFinRL>(csv_path, config);
         }),
              py::arg("csv_path"),
@@ -76,6 +78,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("stop_loss_calculation") = "close",
              py::arg("initial_seed") = 0,
              py::arg("tech_indicator_list") = std::vector<std::string>{},
+             py::arg("macro_tickers") = std::vector<std::string>{},
              "Create FastFinRL environment with keyword arguments")
 
         // Public attributes (read-write)
@@ -115,6 +118,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
         .def("get_all_tickers", &fast_finrl::FastFinRL::get_all_tickers,
              "Get set of all available ticker symbols")
+
+        .def("get_macro_tickers", &fast_finrl::FastFinRL::get_macro_tickers,
+             "Get list of macro ticker symbols")
 
         .def("get_max_day", &fast_finrl::FastFinRL::get_max_day,
              "Get maximum day index")
@@ -378,6 +384,47 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 }
             }
 
+            // Macro tickers - build s["macro"] and s_next["macro"]
+            py::dict macro_dict, macro_next_dict;
+            py::dict macro_mask_dict, macro_next_mask_dict;
+
+            for (const std::string& ticker : holder->macro_tickers) {
+                py::dict td, td_next;
+
+                td["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->macro_ohlc[ticker].data(), make_capsule());
+
+                td["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->macro_indicators[ticker].data(), make_capsule());
+
+                td_next["ohlc"] = py::array_t<double>(
+                    {B, T, 4},
+                    {T * 4 * sizeof(double), 4 * sizeof(double), sizeof(double)},
+                    holder->macro_next_ohlc[ticker].data(), make_capsule());
+
+                td_next["indicators"] = py::array_t<double>(
+                    {B, T, n_ind},
+                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
+                    holder->macro_next_indicators[ticker].data(), make_capsule());
+
+                macro_dict[py::str(ticker)] = td;
+                macro_next_dict[py::str(ticker)] = td_next;
+
+                if (h > 0) {
+                    macro_mask_dict[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->macro_mask[ticker].data(), make_capsule());
+
+                    macro_next_mask_dict[py::str(ticker)] = py::array_t<int>(
+                        {B, T}, {T * sizeof(int), sizeof(int)},
+                        holder->macro_next_mask[ticker].data(), make_capsule());
+                }
+            }
+
             // Actions [B, n_tickers]
             py::array_t<double> actions({B, n_tic},
                 {n_tic * sizeof(double), sizeof(double)},
@@ -427,9 +474,19 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             s_dict["indicator_names"] = holder->indicator_names;
             s_dict["tickers"] = holder->tickers;
             s_dict["portfolio"] = portfolio;
+            s_dict["macro"] = macro_dict;
+            s_dict["macro_tickers"] = holder->macro_tickers;
             s_next_dict["indicator_names"] = holder->indicator_names;
             s_next_dict["tickers"] = holder->tickers;
             s_next_dict["portfolio"] = next_portfolio;
+            s_next_dict["macro"] = macro_next_dict;
+            s_next_dict["macro_tickers"] = holder->macro_tickers;
+
+            // Add macro mask to s_mask_dict
+            if (h > 0 && holder->n_macro_tickers > 0) {
+                py::cast<py::dict>(s_mask_dict)["macro"] = macro_mask_dict;
+                py::cast<py::dict>(s_next_mask_dict)["macro"] = macro_next_mask_dict;
+            }
 
             return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
         }, py::arg("h"), py::arg("batch_size") = py::none(),

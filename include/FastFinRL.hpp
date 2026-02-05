@@ -27,6 +27,7 @@ struct FastFinRLConfig {
     string stop_loss_calculation = "close";
     int64_t initial_seed = 0;
     vector<string> tech_indicator_list = {};  // empty = auto-detect from CSV
+    vector<string> macro_tickers = {};        // tickers always included in state.macro
 };
 
 class FastFinRL {
@@ -56,6 +57,7 @@ public:
     int get_max_day() const { return max_day_; }
     nlohmann::json get_state() const;
     double get_raw_value(const string& ticker, int day, const string& column) const;
+    const vector<string>& get_macro_tickers() const { return macro_tickers_; }
 
     // Market data window query (like DB)
     // Returns past [day-h, day-1] and future [day+1, day+future] market data
@@ -115,6 +117,10 @@ private:
     set<string> indicator_names_;
     set<string> all_tickers_;
     vector<string> tech_indicator_list_;  // user-specified indicators (empty = auto)
+
+    // Macro tickers (always included in state.macro)
+    vector<string> macro_tickers_;
+    set<string> macro_ticker_set_;  // O(1) lookup
 
     // Pre-computed index: (ticker, day) -> row_index for O(1) lookup
     map<pair<string, int>, size_t> row_index_map_;

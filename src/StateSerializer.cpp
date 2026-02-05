@@ -59,6 +59,24 @@ nlohmann::json JsonStateSerializer::serialize(const StateData& state, bool inclu
     }
     result["market"] = move(market);
 
+    // Macro tickers
+    nlohmann::json macro;
+    for (const auto& [ticker, data] : state.macro.tickers) {
+        nlohmann::json ticker_data;
+        ticker_data["open"] = data.open;
+        ticker_data["high"] = data.high;
+        ticker_data["low"] = data.low;
+        ticker_data["close"] = data.close;
+
+        nlohmann::json indicators;
+        for (const auto& [name, value] : data.indicators) {
+            indicators[name] = value;
+        }
+        ticker_data["indicators"] = move(indicators);
+        macro[ticker] = move(ticker_data);
+    }
+    result["macro"] = move(macro);
+
     // Info and debug (only in step)
     if (include_step_info) {
         nlohmann::json info;

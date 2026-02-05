@@ -43,12 +43,14 @@ FastFinRL(
     sell_cost_pct=0.01,            # Sell transaction fee
     stop_loss_tolerance=0.8,       # Stop-loss threshold (0.8 = sell at 20% loss)
     bidding="default",             # Fill price policy
-    tech_indicator_list=[]         # Indicators to use (empty = auto-detect from CSV columns)
+    tech_indicator_list=[],        # Indicators to use (empty = auto-detect from CSV columns)
+    macro_tickers=[]               # Tickers always included in state["macro"] section
 )
 ```
 
 **Notes:**
 - `tech_indicator_list`: Order determines indicator array order in `get_market_window_numpy()`. Empty list auto-detects all non-OHLC numeric columns from CSV.
+- `macro_tickers`: Always included in state regardless of trading tickers. Useful for market indicators like VIX, TLT. Can overlap with trading tickers (appears in both `market` and `macro` sections).
 
 **Bidding options:**
 | Value | Buy Price | Sell Price |
@@ -103,6 +105,7 @@ future_prices = data["AAPL"]["future_ohlc"]  # shape: (20, 4)
 
 ```python
 env.get_all_tickers()      # All available tickers
+env.get_macro_tickers()    # Macro tickers (always in state)
 env.get_max_day()          # Maximum day index
 env.get_indicator_names()  # Technical indicator column names
 ```
@@ -123,6 +126,10 @@ env.get_indicator_names()  # Technical indicator column names
     "market": {
         "AAPL": {"open": 150, "high": 152, "low": 149, "close": 151,
                  "indicators": {"macd": 0.5, "rsi_14": 55}}
+    },
+    "macro": {  # Only present if macro_tickers configured
+        "VIX": {"open": 15, "high": 16, "low": 14, "close": 15,
+                "indicators": {"macd": -0.1, "rsi_14": 40}}
     }
 }
 ```
@@ -212,12 +219,14 @@ s, a, r, s_next, done, s_mask, s_next_mask = buffer.sample(h=20)
 |----------|-------|-------------|
 | `s[ticker]["ohlc"]` | (batch, h+1, 4) | OHLC prices |
 | `s[ticker]["indicators"]` | (batch, h+1, n_ind) | Technical indicators |
+| `s["macro"][ticker]["ohlc"]` | (batch, h+1, 4) | Macro ticker OHLC |
 | `s["portfolio"]["cash"]` | (batch,) | Cash balance |
 | `s["portfolio"]["shares"]` | (batch, n_tickers) | Share holdings |
 | `a` | (batch, n_tickers) | Actions |
 | `r` | (batch, reward_size) | Rewards (always 2D) |
 | `done` | (batch, 1) | Done flags (always 2D) |
 | `s_mask[ticker]` | (batch, h+1) or None | Mask (None if h=0) |
+| `s_mask["macro"][ticker]` | (batch, h+1) or None | Macro mask |
 
 ### save / load
 

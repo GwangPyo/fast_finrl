@@ -52,6 +52,7 @@ struct StateData {
     double reward;
     PortfolioState portfolio;
     MarketState market;
+    MarketState macro;  // macro tickers (always present)
     EpisodeInfo info;
     std::map<std::string, TradeDebugInfo> debug;
 };

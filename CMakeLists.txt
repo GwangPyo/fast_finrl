@@ -91,8 +91,6 @@ target_link_libraries(fast_finrl_py PRIVATE fast_finrl_lib)
 # Install Python module (for pip install)
 install(TARGETS fast_finrl_py LIBRARY DESTINATION .)
 
-# CSV to Parquet conversion tool (only if Arrow/Parquet available)
-if(HAVE_PARQUET)
-    add_executable(csv_to_parquet tools/csv_to_parquet.cpp)
-    target_link_libraries(csv_to_parquet PRIVATE Arrow::arrow_shared Parquet::parquet_shared)
-endif()
+# CSV to Parquet conversion tool
+add_executable(csv_to_parquet tools/csv_to_parquet.cpp)
+target_link_libraries(csv_to_parquet PRIVATE Arrow::arrow_shared Parquet::parquet_shared)

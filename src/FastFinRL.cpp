@@ -19,12 +19,21 @@ FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     , current_seed_(config.initial_seed)
     , rng_(config.initial_seed)
     , tech_indicator_list_(config.tech_indicator_list)
+    , macro_tickers_(config.macro_tickers)
     , state_serializer_(make_unique<JsonStateSerializer>())
 {
     excluded_columns_ = {"day", "day_idx", "date", "tic", "open", "high", "low", "close", "volume", "start"};
     load_dataframe(csv_path);
     extract_indicator_names();
     init_bid_options();
+
+    // Validate and build macro ticker set
+    for (const string& tic : macro_tickers_) {
+        if (all_tickers_.find(tic) == all_tickers_.end()) {
+            throw runtime_error("Macro ticker not found in data: " + tic);
+        }
+    }
+    macro_ticker_set_.insert(macro_tickers_.begin(), macro_tickers_.end());
 }
 
 set<string> FastFinRL::get_indicator_names() const {
@@ -304,11 +313,18 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed,
     setup_tickers(ticker_list);
 
     // 3. Random day selection [min_start_day + shifted_start, max_day * 0.8)
-    // min_start_day = max of first available day among active tickers
+    // min_start_day = max of first available day among active tickers + macro tickers
     int min_start_day = 0;
     for (size_t i = 0; i < active_first_day_.size(); ++i) {
         if (active_first_day_[i] > min_start_day) {
             min_start_day = active_first_day_[i];
+        }
+    }
+    // Also consider macro tickers
+    for (const string& tic : macro_tickers_) {
+        int first = ticker_first_day_.at(tic);
+        if (first > min_start_day) {
+            min_start_day = first;
         }
     }
 
@@ -525,6 +541,22 @@ StateData FastFinRL::build_state_data(bool include_step_info, double reward, boo
         }
 
         state.market.tickers[active_tickers_[i]] = move(market_data);
+    }
+
+    // Macro tickers (always included in state.macro)
+    for (const string& tic : macro_tickers_) {
+        size_t row_idx = find_row_index(tic, day_);
+        TickerMarketData macro_data;
+        macro_data.open = col_open_->get()[row_idx];
+        macro_data.high = col_high_->get()[row_idx];
+        macro_data.low = col_low_->get()[row_idx];
+        macro_data.close = col_close_->get()[row_idx];
+
+        for (const auto& [name, col_ref] : indicator_cols_) {
+            macro_data.indicators[name] = col_ref.get()[row_idx];
+        }
+
+        state.macro.tickers[tic] = move(macro_data);
     }
 
     // Episode info (only meaningful in step)

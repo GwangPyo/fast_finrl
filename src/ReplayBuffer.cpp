@@ -141,6 +141,22 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
         }
     }
 
+    // Macro tickers - get from env
+    const std::vector<std::string>& macro_tickers = env_->get_macro_tickers();
+    result.macro_tickers = macro_tickers;
+    result.n_macro_tickers = static_cast<int>(macro_tickers.size());
+
+    for (const std::string& ticker : macro_tickers) {
+        result.macro_ohlc[ticker].resize(actual_batch * time_len * 4);
+        result.macro_indicators[ticker].resize(actual_batch * time_len * n_ind);
+        result.macro_next_ohlc[ticker].resize(actual_batch * time_len * 4);
+        result.macro_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
+        if (h > 0) {
+            result.macro_mask[ticker].resize(actual_batch * time_len);
+            result.macro_next_mask[ticker].resize(actual_batch * time_len);
+        }
+    }
+
     // Parallel fetch market data
     tbb::parallel_for(tbb::blocked_range<size_t>(0, actual_batch),
         [&](const tbb::blocked_range<size_t>& range) {
@@ -184,6 +200,32 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
                         std::memcpy(result.s_mask[ticker].data() + i * mask_size,
                                    raw.mask.data(), mask_size * sizeof(int));
                         std::memcpy(result.s_next_mask[ticker].data() + i * mask_size,
+                                   raw_next.mask.data(), mask_size * sizeof(int));
+                    }
+                }
+
+                // Macro tickers
+                for (const std::string& ticker : macro_tickers) {
+                    auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
+                    auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
+
+                    size_t ohlc_size = time_len * 4;
+                    size_t ind_size = time_len * n_ind;
+
+                    std::memcpy(result.macro_ohlc[ticker].data() + i * ohlc_size,
+                               raw.ohlc.data(), ohlc_size * sizeof(double));
+                    std::memcpy(result.macro_indicators[ticker].data() + i * ind_size,
+                               raw.indicators.data(), ind_size * sizeof(double));
+                    std::memcpy(result.macro_next_ohlc[ticker].data() + i * ohlc_size,
+                               raw_next.ohlc.data(), ohlc_size * sizeof(double));
+                    std::memcpy(result.macro_next_indicators[ticker].data() + i * ind_size,
+                               raw_next.indicators.data(), ind_size * sizeof(double));
+
+                    if (h > 0) {
+                        size_t mask_size = time_len;
+                        std::memcpy(result.macro_mask[ticker].data() + i * mask_size,
+                                   raw.mask.data(), mask_size * sizeof(int));
+                        std::memcpy(result.macro_next_mask[ticker].data() + i * mask_size,
                                    raw_next.mask.data(), mask_size * sizeof(int));
                     }
                 }
