@@ -52,6 +52,8 @@ public:
 
     // Accessors
     set<string> get_indicator_names() const;
+    set<string> get_all_tickers() const { return all_tickers_; }
+    int get_max_day() const { return max_day_; }
     nlohmann::json get_state() const;
     double get_raw_value(const string& ticker, int day, const string& column) const;
 

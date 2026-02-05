@@ -111,6 +111,12 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def("get_indicator_names", &fast_finrl::FastFinRL::get_indicator_names,
              "Get set of technical indicator column names")
 
+        .def("get_all_tickers", &fast_finrl::FastFinRL::get_all_tickers,
+             "Get set of all available ticker symbols")
+
+        .def("get_max_day", &fast_finrl::FastFinRL::get_max_day,
+             "Get maximum day index")
+
         .def("get_state", [](const fast_finrl::FastFinRL& self) {
             return json_to_python(self.get_state());
         }, "Get current state as dict")
@@ -142,52 +148,77 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                                            int day,
                                            int h,
                                            int future) -> py::dict {
-            // Get multi-ticker data with separated past/current/future
-            auto raw = self.get_market_window_multi(ticker_list, day, h, future);
+            // Zero-copy: Store data in shared_ptr, use capsule to prevent deletion
+            using DataHolder = fast_finrl::FastFinRL::MultiTickerWindowData;
+            auto holder = std::make_shared<DataHolder>(
+                self.get_market_window_multi(ticker_list, day, h, future)
+            );
 
-            int n_ind = raw.n_indicators;
+            int n_ind = holder->n_indicators;
             py::dict result;
 
-            // Process each ticker
-            for (const auto& [ticker, td] : raw.tickers) {
+            // Process each ticker - zero-copy views into holder's memory
+            for (auto& [ticker, td] : holder->tickers) {
                 py::dict ticker_dict;
 
-                // Past arrays
-                py::array_t<double> past_ohlc = py::cast(td.past_ohlc);
-                past_ohlc.resize({h, 4});
-                ticker_dict["past_ohlc"] = past_ohlc;
+                // Capsule prevents holder deletion while arrays exist
+                auto make_capsule = [holder]() {
+                    return py::capsule(new std::shared_ptr<DataHolder>(holder),
+                        [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
+                };
 
-                py::array_t<double> past_ind = py::cast(td.past_indicators);
-                past_ind.resize({h, n_ind});
-                ticker_dict["past_indicators"] = past_ind;
+                // Past arrays - zero-copy views
+                ticker_dict["past_ohlc"] = py::array_t<double>(
+                    {h, 4}, {4 * sizeof(double), sizeof(double)},
+                    td.past_ohlc.data(), make_capsule());
 
-                ticker_dict["past_mask"] = py::cast(td.past_mask);
-                ticker_dict["past_days"] = py::cast(td.past_days);
+                ticker_dict["past_indicators"] = py::array_t<double>(
+                    {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
+                    td.past_indicators.data(), make_capsule());
 
-                // Current arrays
-                ticker_dict["current_ohlc"] = py::cast(td.current_ohlc);
-                ticker_dict["current_indicators"] = py::cast(td.current_indicators);
+                ticker_dict["past_mask"] = py::array_t<int>(
+                    {h}, {sizeof(int)},
+                    td.past_mask.data(), make_capsule());
+
+                ticker_dict["past_days"] = py::array_t<int>(
+                    {h}, {sizeof(int)},
+                    td.past_days.data(), make_capsule());
+
+                // Current arrays - zero-copy views
+                ticker_dict["current_ohlc"] = py::array_t<double>(
+                    {4}, {sizeof(double)},
+                    td.current_ohlc.data(), make_capsule());
+
+                ticker_dict["current_indicators"] = py::array_t<double>(
+                    {n_ind}, {sizeof(double)},
+                    td.current_indicators.data(), make_capsule());
+
                 ticker_dict["current_mask"] = td.current_mask;
                 ticker_dict["current_day"] = td.current_day;
 
-                // Future arrays
-                py::array_t<double> future_ohlc = py::cast(td.future_ohlc);
-                future_ohlc.resize({future, 4});
-                ticker_dict["future_ohlc"] = future_ohlc;
+                // Future arrays - zero-copy views
+                ticker_dict["future_ohlc"] = py::array_t<double>(
+                    {future, 4}, {4 * sizeof(double), sizeof(double)},
+                    td.future_ohlc.data(), make_capsule());
 
-                py::array_t<double> future_ind = py::cast(td.future_indicators);
-                future_ind.resize({future, n_ind});
-                ticker_dict["future_indicators"] = future_ind;
+                ticker_dict["future_indicators"] = py::array_t<double>(
+                    {future, n_ind}, {n_ind * sizeof(double), sizeof(double)},
+                    td.future_indicators.data(), make_capsule());
 
-                ticker_dict["future_mask"] = py::cast(td.future_mask);
-                ticker_dict["future_days"] = py::cast(td.future_days);
+                ticker_dict["future_mask"] = py::array_t<int>(
+                    {future}, {sizeof(int)},
+                    td.future_mask.data(), make_capsule());
+
+                ticker_dict["future_days"] = py::array_t<int>(
+                    {future}, {sizeof(int)},
+                    td.future_days.data(), make_capsule());
 
                 result[py::str(ticker)] = ticker_dict;
             }
 
             // Metadata
             py::list names;
-            for (const auto& name : raw.indicator_names) {
+            for (const auto& name : holder->indicator_names) {
                 names.append(py::str(name));
             }
             result["indicator_names"] = names;
@@ -196,5 +227,5 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             return result;
         }, py::arg("ticker_list"), py::arg("day"), py::arg("h"), py::arg("future"),
-           "Multi-ticker market window with separated past/current/future numpy arrays");
+           "Multi-ticker market window with separated past/current/future numpy arrays (zero-copy)");
 }

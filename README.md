@@ -1,6 +1,6 @@
 # FastFinRL
 
-High-performance stock trading environment for reinforcement learning. A drop-in replacement for [FinRL](https://github.com/AI4Finance-Foundation/FinRL)'s StockTradingEnv with **~200x speedup**.
+High-performance C++ implementation of FinRL StockTradingEnv.
 
 ## Installation
 
@@ -8,160 +8,171 @@ High-performance stock trading environment for reinforcement learning. A drop-in
 pip install fast-finrl
 ```
 
-## Quick Start
-
-```python
-from fast_finrl_py import FastFinRL
-
-# Create environment
-env = FastFinRL("data/stock_data.csv")
-
-# Reset with tickers and seed
-state = env.reset(["AAPL", "MSFT", "GOOGL"], seed=42)
-
-# Training loop
-while not state["done"] and not state["terminal"]:
-    actions = [0.5, -0.3, 0.0]  # buy AAPL, sell MSFT, hold GOOGL
-    state = env.step(actions)
-
-    reward = state["reward"]
-    total_asset = state["portfolio"]["total_asset"]
+Build from source:
+```bash
+sudo apt install -y cmake g++ libtbb-dev  # Ubuntu
+pip install .
 ```
 
-## Configuration
+---
+
+## Usage
 
 ```python
 from fast_finrl_py import FastFinRL
 
-env = FastFinRL(
-    csv_path="data/stock_data.csv",
-    initial_amount=100000.0,
-    hmax=30,
-    buy_cost_pct=0.001,
-    sell_cost_pct=0.001,
-    stop_loss_tolerance=0.85,
-    bidding="uniform",
-    initial_seed=42,
-    tech_indicator_list=["macd", "rsi_14", "cci_14"],
+env = FastFinRL("data/stock.csv")
+state = env.reset(["AAPL", "GOOGL"], seed=42)
+
+while not state["done"]:
+    actions = model.predict(state)  # range: [-1, 1]
+    state = env.step(actions)
+    reward = state["reward"]
+```
+
+---
+
+## Constructor
+
+```python
+FastFinRL(
+    csv_path,                      # CSV or Parquet file path
+    initial_amount=30000.0,        # Initial capital
+    hmax=15,                       # Max trade quantity (action * hmax)
+    buy_cost_pct=0.01,             # Buy transaction fee
+    sell_cost_pct=0.01,            # Sell transaction fee
+    stop_loss_tolerance=0.8,       # Stop-loss threshold (0.8 = sell at 20% loss)
+    bidding="default",             # Fill price policy
+    tech_indicator_list=[]         # Indicators to use (empty = auto-detect)
 )
 ```
 
-### Parameters
+**Bidding options:**
+| Value | Buy Price | Sell Price |
+|-------|-----------|------------|
+| default | close | close |
+| uniform | random(low, high) | random(low, high) |
+| adv_uniform | random(max(open,close), high) | random(low, min(open,close)) |
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `csv_path` | (required) | Path to CSV file with stock data |
-| `initial_amount` | 30000.0 | Starting cash amount |
-| `hmax` | 15 | Max shares per trade (action * hmax) |
-| `buy_cost_pct` | 0.01 | Buy fee (1% = 0.01) |
-| `sell_cost_pct` | 0.01 | Sell fee (1% = 0.01) |
-| `stop_loss_tolerance` | 0.8 | Stop-loss threshold (0.8 = sell at 20% loss) |
-| `bidding` | "default" | Price execution policy |
-| `stop_loss_calculation` | "close" | Stop-loss reference: "close" or "low" |
-| `initial_seed` | 0 | Random seed |
-| `tech_indicator_list` | [] | Indicator columns (empty = auto-detect) |
-
-### Bidding Policies
-
-| Policy | Buy Price | Sell Price |
-|--------|-----------|------------|
-| `default` | close | close |
-| `uniform` | random(low, high) | random(low, high) |
-| `adv_uniform` | random(max(open,close), high) | random(low, min(open,close)) |
+---
 
 ## API
 
-### `reset(ticker_list, seed) -> dict`
+### reset(ticker_list, seed, shifted_start=0)
 
-Reset environment with given tickers.
+Initialize episode.
 
 ```python
-state = env.reset(["AAPL", "MSFT"], seed=42)
-# seed=-1: auto-increment from previous seed
+state = env.reset(["AAPL", "GOOGL"], seed=42, shifted_start=100)
 ```
 
-Returns:
+- `ticker_list`: Tickers to trade
+- `seed`: Random seed (-1 = previous seed + 1)
+- `shifted_start`: Delay start by N days
+
+### step(actions)
+
+Execute one step.
+
+```python
+state = env.step([0.5, -0.3])  # Buy AAPL, Sell GOOGL
+```
+
+- `actions`: List of values in [-1, 1]. Positive=buy, Negative=sell, 0=hold
+
+### get_market_window_numpy(ticker_list, day, h, future)
+
+Get market data for ML models. **Returns zero-copy numpy arrays.**
+
+```python
+data = env.get_market_window_numpy(["AAPL"], day=500, h=100, future=20)
+
+# Usage:
+past_prices = data["AAPL"]["past_ohlc"]      # shape: (100, 4)
+past_mask = data["AAPL"]["past_mask"]        # shape: (100,), 1=valid, 0=padding
+future_prices = data["AAPL"]["future_ohlc"]  # shape: (20, 4)
+```
+
+### Utilities
+
+```python
+env.get_all_tickers()      # All available tickers
+env.get_max_day()          # Maximum day index
+env.get_indicator_names()  # Technical indicator column names
+```
+
+---
+
+## State Structure
+
+### reset() return value
 ```python
 {
-    "day": 0,
-    "date": "2023-01-01",
-    "seed": 42,
-    "done": False,
-    "terminal": False,
+    "day": 150,
+    "date": "2023-06-15",
     "portfolio": {
-        "cash": 30000.0,
+        "cash": 100000.0,
         "holdings": {"AAPL": {"shares": 0, "avg_buy_price": 0.0}}
     },
     "market": {
-        "AAPL": {
-            "open": 150.0, "high": 152.0, "low": 149.0, "close": 151.0,
-            "indicators": {"macd": 0.5, "rsi_14": 50.1}
-        }
+        "AAPL": {"open": 150, "high": 152, "low": 149, "close": 151,
+                 "indicators": {"macd": 0.5, "rsi_14": 55}}
     }
 }
 ```
 
-### `step(actions) -> dict`
-
-Execute one trading step.
-
-- `actions`: List of floats in [-1, 1] (one per ticker)
-  - Positive = buy, Negative = sell, Zero = hold
-
-Returns:
+### step() return value
 ```python
 {
-    "day": 1,
-    "reward": 0.0023,  # log(end_asset / begin_asset)
+    "day": 151,
+    "reward": 0.0023,
     "done": False,
     "terminal": False,
-    "portfolio": {"cash": 25000.0, "total_asset": 30500.0, ...},
+    "portfolio": {"cash": 95000, "total_asset": 100230, ...},
     "market": {...},
-    "debug": {"AAPL": {"fill_price": 150.5, "cost": 15.05, "quantity": 10}},
-    "info": {"n_trades": 1, "num_stop_loss": 0, "loss_cut_amount": 0.0}
+    "info": {"n_trades": 5, "num_stop_loss": 0},
+    "debug": {"AAPL": {"fill_price": 151, "cost": 15.1, "quantity": 10}}
 }
 ```
 
+---
+
 ## Data Format
 
-CSV with columns:
-
-| Column | Type | Required |
-|--------|------|----------|
-| day | int | Yes |
-| date | string | Yes |
-| tic | string | Yes |
-| open, high, low, close | float | Yes |
-| volume | float | Yes |
-| *(other columns)* | float | Used as indicators |
+Required CSV columns:
 
 ```csv
 day,date,tic,open,high,low,close,volume,macd,rsi_14
-0,2023-01-01,AAPL,150.0,152.0,149.0,151.0,1000000,0.5,50.1
-0,2023-01-01,MSFT,250.0,255.0,248.0,252.0,800000,0.3,48.5
+0,2023-01-01,AAPL,150,152,149,151,1000000,0.5,55
+0,2023-01-01,GOOGL,2800,2850,2790,2820,500000,-0.3,52
+1,2023-01-02,AAPL,151,153,150,152,1100000,0.7,58
 ```
 
-## Performance
+- `day`: Time index (starts from 0)
+- `tic`: Ticker symbol
+- Other numeric columns: Automatically detected as technical indicators
 
-| Tickers | Step Time |
-|---------|-----------|
-| 4 | 0.03ms |
-| 9 | 0.07ms |
-| 37 | 0.19ms |
+---
 
-## Build from Source
+## Example: Training Loop
 
-### Requirements (Ubuntu/Debian)
+```python
+env = FastFinRL("train.csv", initial_amount=100000, hmax=30)
+tickers = list(env.get_all_tickers())
 
-```bash
-sudo apt install -y libarrow-dev libparquet-dev libtbb-dev
+for episode in range(1000):
+    state = env.reset(tickers, seed=episode)
+
+    while not state["done"] and not state["terminal"]:
+        # Get market data
+        window = env.get_market_window_numpy(tickers, state["day"], h=50, future=0)
+
+        # Model inference
+        actions = model(window)
+
+        # Step
+        state = env.step(actions)
+
+        # Train
+        model.train(state["reward"])
 ```
-
-### Build
-
-```bash
-git clone https://github.com/GwangPyo/fast_finrl.git
-cd fast_finrl
-pip install .
-```
- 
