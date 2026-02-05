@@ -1,30 +1,10 @@
 #include "FastFinRL.hpp"
+#include "DataLoader.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
-#include <fstream>
-#include <sstream>
-#include <future>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
-#include <arrow/api.h>
-#include <arrow/io/api.h>
-#include <parquet/arrow/reader.h>
-#include <parquet/file_reader.h>
-#include <parquet/properties.h>
-
-// DataFrame selector macros for filtering by ticker and day
-#define DF_SELECTOR_BY_TICKER_DAY(ticker_var, day_var) \
-    [&ticker_var, day_var](const unsigned long&, const string& tic, const int& d) -> bool { \
-        return tic == ticker_var && d == day_var; \
-    }
-
-#define DF_SELECTOR_BY_TICKER_DAY_MEMBER(ticker_var, day_member) \
-    [&ticker_var, this](const unsigned long&, const string& tic, const int& d) -> bool { \
-        return tic == ticker_var && d == this->day_member; \
-    }
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
 
 namespace fast_finrl {
 
@@ -39,7 +19,7 @@ FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     , current_seed_(config.initial_seed)
     , rng_(config.initial_seed)
     , tech_indicator_list_(config.tech_indicator_list)
-    , json_handler_(make_unique<JsonHandler>(*this))
+    , state_serializer_(make_unique<JsonStateSerializer>())
 {
     excluded_columns_ = {"day", "day_idx", "date", "tic", "open", "high", "low", "close", "volume", "start"};
     load_dataframe(csv_path);
@@ -51,188 +31,24 @@ set<string> FastFinRL::get_indicator_names() const {
     return indicator_names_;
 }
 
-hmdf::ReadParams FastFinRL::build_csv2_schema(const string& csv_path) {
-    ifstream infile(csv_path);
-    if (!infile.is_open()) {
-        throw runtime_error("Cannot open file: " + csv_path);
-    }
-
-    // Read only the header line
-    string header_line;
-    getline(infile, header_line);
-    infile.close();
-
-    // Parse column names
-    vector<string> col_names;
-    stringstream header_ss(header_line);
-    string col_name;
-    while (getline(header_ss, col_name, ',')) {
-        col_names.push_back(col_name);
-    }
-
-    // Build schema for csv2 format
-    hmdf::ReadParams params;
-    params.skip_first_line = true;  // Skip header row
-
-    // First entry is always the index (ULONG)
-    hmdf::ReadSchema index_schema;
-    index_schema.col_name = hmdf::DF_INDEX_COL_NAME;
-    index_schema.col_type = hmdf::file_dtypes::ULONG;
-    index_schema.col_idx = 0;
-    params.schema.push_back(index_schema);
-
-    // Add schema for each column
-    for (size_t i = 0; i < col_names.size(); ++i) {
-        hmdf::ReadSchema col_schema;
-        col_schema.col_name = col_names[i].c_str();
-
-        // Determine type: 'date' and 'tic' are strings, rest are numeric
-        if (col_names[i] == "date" || col_names[i] == "tic") {
-            col_schema.col_type = hmdf::file_dtypes::STRING;
-        } else {
-            col_schema.col_type = hmdf::file_dtypes::DOUBLE;
-        }
-        col_schema.col_idx = static_cast<int>(i + 1);  // +1 because index is at 0
-        params.schema.push_back(col_schema);
-    }
-
-    return params;
-}
-
-namespace {
-    // Template to extract column data from Arrow chunked array
-    template<typename ArrowType, typename CppType>
-    vector<CppType> extract_column(const std::shared_ptr<arrow::ChunkedArray>& chunked, size_t num_rows) {
-        using ArrayType = typename arrow::TypeTraits<ArrowType>::ArrayType;
-        vector<CppType> col_data;
-        col_data.reserve(num_rows);
-        for (int c = 0; c < chunked->num_chunks(); ++c) {
-            auto array = std::static_pointer_cast<ArrayType>(chunked->chunk(c));
-            for (int64_t j = 0; j < array->length(); ++j) {
-                if constexpr (std::is_same_v<CppType, string>) {
-                    col_data.push_back(string(array->GetView(j)));
-                } else {
-                    col_data.push_back(static_cast<CppType>(array->Value(j)));
-                }
-            }
-        }
-        return col_data;
-    }
-
-    // Convert numeric to string
-    template<typename ArrowType>
-    vector<string> extract_as_string(const std::shared_ptr<arrow::ChunkedArray>& chunked, size_t num_rows) {
-        using ArrayType = typename arrow::TypeTraits<ArrowType>::ArrayType;
-        vector<string> col_data;
-        col_data.reserve(num_rows);
-        for (int c = 0; c < chunked->num_chunks(); ++c) {
-            auto array = std::static_pointer_cast<ArrayType>(chunked->chunk(c));
-            for (int64_t j = 0; j < array->length(); ++j) {
-                col_data.push_back(to_string(array->Value(j)));
-            }
-        }
-        return col_data;
-    }
-}
-
-void FastFinRL::load_from_parquet(const string& path) {
-    PARQUET_ASSIGN_OR_THROW(auto infile, arrow::io::ReadableFile::Open(path));
-
-    // Create ParquetFileReader first
-    auto parquet_reader = parquet::ParquetFileReader::Open(infile);
-
-    // Enable parallel column reading
-    parquet::ArrowReaderProperties props(true);  // use_threads = true
-    props.set_pre_buffer(true);  // Pre-buffer for better I/O
-
-    // Create FileReader with properties
-    PARQUET_ASSIGN_OR_THROW(auto reader,
-        parquet::arrow::FileReader::Make(arrow::default_memory_pool(), std::move(parquet_reader), props));
-    reader->set_use_threads(true);  // Enable parallel decoding
-
-    std::shared_ptr<arrow::Table> table;
-    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
-
-    size_t num_rows = table->num_rows();
-    int num_cols = table->num_columns();
-
-    // Create index
-    vector<unsigned long> index(num_rows);
-    for (size_t i = 0; i < num_rows; ++i) index[i] = i;
-    df_.load_index(move(index));
-
-    // Pre-extract column info
-    vector<string> col_names(num_cols);
-    vector<arrow::Type::type> col_types(num_cols);
-    for (int i = 0; i < num_cols; ++i) {
-        col_names[i] = table->field(i)->name();
-        col_types[i] = table->column(i)->type()->id();
-    }
-
-    // Extract columns in parallel using std::async
-    vector<vector<double>> double_cols(num_cols);
-    vector<vector<string>> string_cols(num_cols);
-    vector<bool> is_string_col(num_cols, false);
-    vector<std::future<void>> futures;
-    futures.reserve(num_cols);
-
-    for (int i = 0; i < num_cols; ++i) {
-        futures.push_back(std::async(std::launch::async, [&, i]() {
-            auto chunked = table->column(i);
-            auto type_id = col_types[i];
-            const auto& col_name = col_names[i];
-
-            if (col_name == "date" || col_name == "tic") {
-                is_string_col[i] = true;
-                if (type_id == arrow::Type::STRING) {
-                    string_cols[i] = extract_column<arrow::StringType, string>(chunked, num_rows);
-                } else if (type_id == arrow::Type::INT64) {
-                    string_cols[i] = extract_as_string<arrow::Int64Type>(chunked, num_rows);
-                }
-            } else {
-                if (type_id == arrow::Type::DOUBLE) {
-                    double_cols[i] = extract_column<arrow::DoubleType, double>(chunked, num_rows);
-                } else if (type_id == arrow::Type::INT64) {
-                    double_cols[i] = extract_column<arrow::Int64Type, double>(chunked, num_rows);
-                } else if (type_id == arrow::Type::FLOAT) {
-                    double_cols[i] = extract_column<arrow::FloatType, double>(chunked, num_rows);
-                }
-            }
-        }));
-    }
-
-    // Wait for all extractions to complete
-    for (auto& f : futures) f.get();
-
-    // Load columns into DataFrame (sequential - DataFrame not thread-safe)
-    for (int i = 0; i < num_cols; ++i) {
-        if (is_string_col[i]) {
-            df_.load_column(col_names[i].c_str(), move(string_cols[i]));
-        } else {
-            df_.load_column(col_names[i].c_str(), move(double_cols[i]));
-        }
-    }
-}
-
 void FastFinRL::load_dataframe(const string& path) {
     // Enable DataFrame's internal threading for parallel operations
     hmdf::ThreadGranularity::set_optimum_thread_level();
 
-    // Check file extension and load accordingly
-    bool is_parquet = (path.size() >= 8 && path.substr(path.size() - 8) == ".parquet");
+    // Use DataLoader interface to load data
+    auto loader = create_loader(path);
+    loader->load(path, df_);
 
-    if (is_parquet) {
-        load_from_parquet(path);
-    } else {
-        auto params = build_csv2_schema(path);
-        df_.read(path.c_str(), hmdf::io_format::csv2, params);
-    }
+    // Build index tables and cache column references
+    build_index_tables();
+}
 
+void FastFinRL::build_index_tables() {
     // Get all unique tickers using DataFrame library
     auto unique_tics = df_.get_col_unique_values<string>("tic");
     all_tickers_.insert(unique_tics.begin(), unique_tics.end());
 
-    // Generate 'day' column from unique dates (dense ranking like Python)
+    // Generate 'day_idx' column from unique dates (dense ranking like Python)
     // Similar to: df['day'] = df['date'].rank(method='dense').astype(int) - 1
     const auto& date_col = df_.get_column<string>("date");
 
@@ -253,7 +69,7 @@ void FastFinRL::load_dataframe(const string& path) {
         day_values.push_back(date_to_day[date]);
     }
 
-    // Create 'day' column from sorted date timestamps
+    // Create 'day_idx' column from sorted date timestamps
     df_.load_column("day_idx", move(day_values));
 
     // Set max_day
@@ -353,7 +169,6 @@ void FastFinRL::update_row_indices() {
         active_row_indices_[i] = ticker_row_table_[active_global_idx_[i]][day_];
     }
 }
-
 
 size_t FastFinRL::find_row_index(const string& ticker, int day) const {
     // Use pre-computed index map for O(1) lookup
@@ -476,7 +291,7 @@ double FastFinRL::get_randomized_price(size_t ticker_idx, const string& option) 
     return get_price(ticker_idx, "close");
 }
 
-nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed) {
+nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed, int shifted_start) {
     // 1. Seed handling
     if (seed == -1) {
         current_seed_++;
@@ -488,7 +303,7 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed)
     // 2. Setup tickers
     setup_tickers(ticker_list);
 
-    // 3. Random day selection [min_start_day, max_day * 0.8)
+    // 3. Random day selection [min_start_day + shifted_start, max_day * 0.8)
     // min_start_day = max of first available day among active tickers
     int min_start_day = 0;
     for (size_t i = 0; i < active_first_day_.size(); ++i) {
@@ -497,8 +312,14 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed)
         }
     }
 
+    // Apply shifted_start offset
+    min_start_day += shifted_start;
+
     int max_start_day = static_cast<int>(max_day_ * 0.8);
-    if (max_start_day <= min_start_day) max_start_day = min_start_day + 1;
+    if (min_start_day >= max_start_day) {
+        throw runtime_error("shifted_start too large: min_start_day(" + to_string(min_start_day) +
+                          ") >= max_start_day(" + to_string(max_start_day) + ")");
+    }
     uniform_int_distribution<int> dist(min_start_day, max_start_day - 1);
     day_ = dist(rng_);
 
@@ -517,7 +338,7 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed)
     in_step_ = false;
 
     // 6. Build and return state JSON
-    return json_handler_->build_state_json();
+    return state_serializer_->serialize(build_state_data(false), false);
 }
 
 int FastFinRL::sell_stock(size_t index, int action) {
@@ -658,135 +479,460 @@ nlohmann::json FastFinRL::step(const vector<double>& actions) {
     bool done = (end_total_asset <= 25000.0) || terminal;
 
     // 12. Build and return state
-    return json_handler_->build_step_result_json(reward, done, terminal);
+    return state_serializer_->serialize(build_state_data(true, reward, done, terminal), true);
 }
 
 nlohmann::json FastFinRL::get_state() const {
     if (in_step_) {
-        return json_handler_->build_step_result_json(0.0, false, false);
+        return state_serializer_->serialize(build_state_data(true, 0.0, false, false), true);
     }
-    return json_handler_->build_state_json();
+    return state_serializer_->serialize(build_state_data(false), false);
 }
 
-// ============================================================================
-// JsonHandler Implementation
-// ============================================================================
+StateData FastFinRL::build_state_data(bool include_step_info, double reward, bool done, bool terminal) const {
+    StateData state;
 
-nlohmann::json JsonHandler::build_market_json() const {
-    const size_t n = env_.active_tickers_.size();
-    constexpr size_t OMP_THRESHOLD = 16;  // Only use OpenMP for 16+ tickers
+    // Basic state info
+    state.day = day_;
+    state.date = get_date();
+    state.seed = current_seed_;
+    state.done = done;
+    state.terminal = terminal;
+    state.reward = reward;
 
-    // Pre-allocate per-ticker JSON objects
-    vector<nlohmann::json> ticker_jsons(n);
+    // Portfolio
+    state.portfolio.cash = cash_;
+    state.portfolio.total_asset = calculate_total_asset();
+    for (size_t i = 0; i < active_tickers_.size(); ++i) {
+        TickerHolding holding;
+        holding.shares = shares_[i];
+        holding.avg_buy_price = avg_buy_price_[i];
+        state.portfolio.holdings[active_tickers_[i]] = holding;
+    }
 
-    // Build each ticker's JSON (parallel if enough tickers and OpenMP available)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(n >= OMP_THRESHOLD)
-    #endif
-    for (size_t i = 0; i < n; ++i) {
-        size_t row_idx = env_.active_row_indices_[i];
-        nlohmann::json ticker_data;
+    // Market data
+    for (size_t i = 0; i < active_tickers_.size(); ++i) {
+        size_t row_idx = active_row_indices_[i];
+        TickerMarketData market_data;
+        market_data.open = col_open_->get()[row_idx];
+        market_data.high = col_high_->get()[row_idx];
+        market_data.low = col_low_->get()[row_idx];
+        market_data.close = col_close_->get()[row_idx];
 
-        ticker_data["open"] = env_.col_open_->get()[row_idx];
-        ticker_data["high"] = env_.col_high_->get()[row_idx];
-        ticker_data["low"] = env_.col_low_->get()[row_idx];
-        ticker_data["close"] = env_.col_close_->get()[row_idx];
+        // Technical indicators
+        for (const auto& [name, col_ref] : indicator_cols_) {
+            market_data.indicators[name] = col_ref.get()[row_idx];
+        }
+
+        state.market.tickers[active_tickers_[i]] = move(market_data);
+    }
+
+    // Episode info (only meaningful in step)
+    if (include_step_info) {
+        state.info.loss_cut_amount = loss_cut_amount_;
+        state.info.n_trades = trades_this_step_;
+        state.info.num_stop_loss = num_stop_loss_;
+
+        // Debug trade info
+        for (size_t i = 0; i < active_tickers_.size(); ++i) {
+            TradeDebugInfo debug;
+            debug.fill_price = trade_info_[i].fill_price;
+            debug.cost = trade_info_[i].cost;
+            debug.quantity = trade_info_[i].quantity;
+            state.debug[active_tickers_[i]] = debug;
+        }
+    }
+
+    return state;
+}
+
+nlohmann::json FastFinRL::get_market_window(const string& ticker, int day, int h, int future) const {
+    // Validate ticker
+    auto it = ticker_global_idx_.find(ticker);
+    if (it == ticker_global_idx_.end()) {
+        throw runtime_error("Ticker not found: " + ticker);
+    }
+    size_t global_idx = it->second;
+
+    // Get ticker's first day
+    int first_day = ticker_first_day_.at(ticker);
+
+    // Validate day range (allow querying any day, will pad if needed)
+    if (day < 0 || day >= max_day_) {
+        throw runtime_error("Day " + to_string(day) + " out of range [0, " + to_string(max_day_) + ")");
+    }
+
+    // Pre-allocate vectors for parallel filling
+    vector<nlohmann::json> past_data(h);
+    vector<int> past_mask_vec(h);
+    vector<nlohmann::json> future_data(future);
+    vector<int> future_mask_vec(future);
+
+    // Cache indicator names for thread safety
+    vector<string> indicator_names;
+    indicator_names.reserve(indicator_cols_.size());
+    for (const auto& [name, _] : indicator_cols_) {
+        indicator_names.push_back(name);
+    }
+
+    // Helper lambda to build market data for a single day (thread-safe)
+    auto build_day_data = [&](int d) -> nlohmann::json {
+        size_t row_idx = ticker_row_table_[global_idx][d];
+        nlohmann::json day_data;
+        day_data["day"] = d;
+        day_data["date"] = col_date_->get()[row_idx];
+        day_data["open"] = col_open_->get()[row_idx];
+        day_data["high"] = col_high_->get()[row_idx];
+        day_data["low"] = col_low_->get()[row_idx];
+        day_data["close"] = col_close_->get()[row_idx];
 
         nlohmann::json indicators;
-        for (const auto& [ind_name, col_ref] : env_.indicator_cols_) {
-            indicators[ind_name] = col_ref.get()[row_idx];
+        for (size_t i = 0; i < indicator_cols_.size(); ++i) {
+            indicators[indicator_names[i]] = indicator_cols_[i].second.get()[row_idx];
         }
-        ticker_data["indicators"] = move(indicators);
+        day_data["indicators"] = move(indicators);
+        return day_data;
+    };
 
-        ticker_jsons[i] = move(ticker_data);
-    }
+    // Helper to build padded (zero) day data (thread-safe)
+    auto build_padded_data = [&]() -> nlohmann::json {
+        nlohmann::json day_data;
+        day_data["day"] = -1;
+        day_data["date"] = "";
+        day_data["open"] = 0.0;
+        day_data["high"] = 0.0;
+        day_data["low"] = 0.0;
+        day_data["close"] = 0.0;
 
-    // Merge into final market JSON (sequential)
-    nlohmann::json market;
-    for (size_t i = 0; i < n; ++i) {
-        market[env_.active_tickers_[i]] = move(ticker_jsons[i]);
-    }
-
-    return market;
-}
-
-nlohmann::json JsonHandler::build_portfolio_json(bool include_total_asset) const {
-    const size_t n = env_.active_tickers_.size();
-    constexpr size_t OMP_THRESHOLD = 16;  // Only use OpenMP for 16+ tickers
-
-    nlohmann::json portfolio;
-    portfolio["cash"] = env_.cash_;
-
-    // Build holdings (parallel if enough tickers)
-    vector<nlohmann::json> holding_jsons(n);
-
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) if(n >= OMP_THRESHOLD)
-    #endif
-    for (size_t i = 0; i < n; ++i) {
-        holding_jsons[i] = {
-            {"shares", env_.shares_[i]},
-            {"avg_buy_price", env_.avg_buy_price_[i]}
-        };
-    }
-
-    // Merge holdings
-    nlohmann::json holdings;
-    for (size_t i = 0; i < n; ++i) {
-        holdings[env_.active_tickers_[i]] = move(holding_jsons[i]);
-    }
-    portfolio["holdings"] = move(holdings);
-
-    if (include_total_asset) {
-        portfolio["total_asset"] = env_.calculate_total_asset();
-    }
-
-    return portfolio;
-}
-
-nlohmann::json JsonHandler::build_state_json() const {
-    nlohmann::json state;
-    state["day"] = env_.day_;
-    state["date"] = env_.get_date();
-    state["seed"] = env_.current_seed_;
-    state["done"] = false;
-    state["terminal"] = false;
-    state["portfolio"] = build_portfolio_json(false);
-    state["market"] = build_market_json();
-    return state;
-}
-
-nlohmann::json JsonHandler::build_step_result_json(double reward, bool done, bool terminal) const {
-    nlohmann::json state;
-    state["day"] = env_.day_;
-    state["date"] = env_.get_date();
-    state["done"] = done;
-    state["terminal"] = terminal;
-    state["reward"] = reward;
-    state["portfolio"] = build_portfolio_json(true);
-    state["market"] = build_market_json();
-
-    nlohmann::json info;
-    info["loss_cut_amount"] = env_.loss_cut_amount_;
-    info["n_trades"] = env_.trades_this_step_;
-    info["num_stop_loss"] = env_.num_stop_loss_;
-    state["info"] = info;
-
-    // Debug: per-ticker execution info
-    nlohmann::json debug;
-    for (size_t i = 0; i < env_.active_tickers_.size(); ++i) {
-        const auto& ti = env_.trade_info_[i];
-        if (ti.quantity != 0) {  // Only include if there was a trade
-            debug[env_.active_tickers_[i]] = {
-                {"fill_price", ti.fill_price},
-                {"cost", ti.cost},
-                {"quantity", ti.quantity}
-            };
+        nlohmann::json indicators;
+        for (const auto& name : indicator_names) {
+            indicators[name] = 0.0;
         }
-    }
-    state["debug"] = debug;
+        day_data["indicators"] = move(indicators);
+        return day_data;
+    };
 
-    return state;
+    // Parallel build past data: [day-h, day-h+1, ..., day-1]
+    if (h > 0) {
+        tbb::parallel_for(tbb::blocked_range<int>(0, h),
+            [&](const tbb::blocked_range<int>& range) {
+                for (int i = range.begin(); i < range.end(); ++i) {
+                    int d = day - h + i;  // i=0 -> day-h, i=h-1 -> day-1
+                    if (d >= first_day && d >= 0) {
+                        past_data[i] = build_day_data(d);
+                        past_mask_vec[i] = 1;
+                    } else {
+                        past_data[i] = build_padded_data();
+                        past_mask_vec[i] = 0;
+                    }
+                }
+            }
+        );
+    }
+
+    // Parallel build future data: [day+1, day+2, ..., day+future]
+    if (future > 0) {
+        tbb::parallel_for(tbb::blocked_range<int>(0, future),
+            [&](const tbb::blocked_range<int>& range) {
+                for (int i = range.begin(); i < range.end(); ++i) {
+                    int d = day + 1 + i;  // i=0 -> day+1, i=future-1 -> day+future
+                    if (d < max_day_) {
+                        future_data[i] = build_day_data(d);
+                        future_mask_vec[i] = 1;
+                    } else {
+                        future_data[i] = build_padded_data();
+                        future_mask_vec[i] = 0;
+                    }
+                }
+            }
+        );
+    }
+
+    // Convert vectors to JSON arrays
+    nlohmann::json result;
+    result["past"] = nlohmann::json(past_data);
+    result["past_mask"] = nlohmann::json(past_mask_vec);
+    result["future"] = nlohmann::json(future_data);
+    result["future_mask"] = nlohmann::json(future_mask_vec);
+
+    // Current day
+    if (day >= first_day) {
+        result["current"] = build_day_data(day);
+        result["current_mask"] = 1;
+    } else {
+        result["current"] = build_padded_data();
+        result["current_mask"] = 0;
+    }
+
+    return result;
+}
+
+nlohmann::json FastFinRL::get_market_window_flat(const string& ticker, int day, int h, int future) const {
+    // Validate ticker
+    auto it = ticker_global_idx_.find(ticker);
+    if (it == ticker_global_idx_.end()) {
+        throw runtime_error("Ticker not found: " + ticker);
+    }
+    size_t global_idx = it->second;
+    int first_day = ticker_first_day_.at(ticker);
+
+    if (day < 0 || day >= max_day_) {
+        throw runtime_error("Day " + to_string(day) + " out of range [0, " + to_string(max_day_) + ")");
+    }
+
+    int total_len = h + 1 + future;  // past + current + future
+    size_t n_indicators = indicator_cols_.size();
+
+    // Pre-allocate flat arrays
+    vector<vector<double>> ohlc(total_len, vector<double>(4, 0.0));
+    vector<vector<double>> indicators(total_len, vector<double>(n_indicators, 0.0));
+    vector<int> mask(total_len, 0);
+    vector<int> days(total_len, -1);
+    vector<string> dates(total_len, "");
+
+    // Parallel fill all data
+    tbb::parallel_for(tbb::blocked_range<int>(0, total_len),
+        [&](const tbb::blocked_range<int>& range) {
+            for (int i = range.begin(); i < range.end(); ++i) {
+                int d;
+                if (i < h) {
+                    d = day - h + i;  // past: [day-h, day-1]
+                } else if (i == h) {
+                    d = day;          // current
+                } else {
+                    d = day + (i - h); // future: [day+1, day+future]
+                }
+
+                if (d >= first_day && d >= 0 && d < max_day_) {
+                    size_t row_idx = ticker_row_table_[global_idx][d];
+                    ohlc[i][0] = col_open_->get()[row_idx];
+                    ohlc[i][1] = col_high_->get()[row_idx];
+                    ohlc[i][2] = col_low_->get()[row_idx];
+                    ohlc[i][3] = col_close_->get()[row_idx];
+
+                    for (size_t j = 0; j < n_indicators; ++j) {
+                        indicators[i][j] = indicator_cols_[j].second.get()[row_idx];
+                    }
+
+                    mask[i] = 1;
+                    days[i] = d;
+                    dates[i] = col_date_->get()[row_idx];
+                }
+                // else: already initialized to 0/empty (padding)
+            }
+        }
+    );
+
+    nlohmann::json result;
+    result["ohlc"] = move(ohlc);
+    result["indicators"] = move(indicators);
+    result["mask"] = move(mask);
+    result["days"] = move(days);
+    result["dates"] = move(dates);
+    result["h"] = h;
+    result["future"] = future;
+
+    // Include indicator names for reference
+    vector<string> indicator_names;
+    indicator_names.reserve(n_indicators);
+    for (const auto& [name, _] : indicator_cols_) {
+        indicator_names.push_back(name);
+    }
+    result["indicator_names"] = move(indicator_names);
+
+    return result;
+}
+
+FastFinRL::MarketWindowData FastFinRL::get_market_window_raw(const string& ticker, int day, int h, int future) const {
+    // Validate ticker
+    auto it = ticker_global_idx_.find(ticker);
+    if (it == ticker_global_idx_.end()) {
+        throw runtime_error("Ticker not found: " + ticker);
+    }
+    size_t global_idx = it->second;
+    int first_day = ticker_first_day_.at(ticker);
+
+    if (day < 0 || day >= max_day_) {
+        throw runtime_error("Day " + to_string(day) + " out of range [0, " + to_string(max_day_) + ")");
+    }
+
+    int total_len = h + 1 + future;
+    size_t n_ind = indicator_cols_.size();
+
+    MarketWindowData result;
+    result.total_len = total_len;
+    result.n_indicators = static_cast<int>(n_ind);
+
+    // Pre-allocate flat arrays
+    result.ohlc.resize(total_len * 4, 0.0);
+    result.indicators.resize(total_len * n_ind, 0.0);
+    result.mask.resize(total_len, 0);
+    result.days.resize(total_len, -1);
+
+    // Cache indicator names
+    result.indicator_names.reserve(n_ind);
+    for (const auto& [name, _] : indicator_cols_) {
+        result.indicator_names.push_back(name);
+    }
+
+    // Parallel fill using raw pointers for thread safety
+    double* ohlc_ptr = result.ohlc.data();
+    double* ind_ptr = result.indicators.data();
+    int* mask_ptr = result.mask.data();
+    int* days_ptr = result.days.data();
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, total_len),
+        [=, this](const tbb::blocked_range<int>& range) {
+            for (int i = range.begin(); i < range.end(); ++i) {
+                int d;
+                if (i < h) {
+                    d = day - h + i;
+                } else if (i == h) {
+                    d = day;
+                } else {
+                    d = day + (i - h);
+                }
+
+                if (d >= first_day && d >= 0 && d < max_day_) {
+                    size_t row_idx = ticker_row_table_[global_idx][d];
+                    size_t ohlc_base = i * 4;
+                    ohlc_ptr[ohlc_base + 0] = col_open_->get()[row_idx];
+                    ohlc_ptr[ohlc_base + 1] = col_high_->get()[row_idx];
+                    ohlc_ptr[ohlc_base + 2] = col_low_->get()[row_idx];
+                    ohlc_ptr[ohlc_base + 3] = col_close_->get()[row_idx];
+
+                    size_t ind_base = i * n_ind;
+                    for (size_t j = 0; j < n_ind; ++j) {
+                        ind_ptr[ind_base + j] = indicator_cols_[j].second.get()[row_idx];
+                    }
+
+                    mask_ptr[i] = 1;
+                    days_ptr[i] = d;
+                }
+            }
+        }
+    );
+
+    return result;
+}
+
+FastFinRL::MultiTickerWindowData FastFinRL::get_market_window_multi(
+    const vector<string>& ticker_list, int day, int h, int future) const {
+
+    if (day < 0 || day >= max_day_) {
+        throw runtime_error("Day " + to_string(day) + " out of range [0, " + to_string(max_day_) + ")");
+    }
+
+    size_t n_ind = indicator_cols_.size();
+
+    MultiTickerWindowData result;
+    result.h = h;
+    result.future = future;
+    result.n_indicators = static_cast<int>(n_ind);
+
+    // Cache indicator names
+    for (const auto& [name, _] : indicator_cols_) {
+        result.indicator_names.push_back(name);
+    }
+
+    // Process each ticker in parallel
+    vector<pair<string, TickerWindowData>> ticker_results(ticker_list.size());
+
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, ticker_list.size()),
+        [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t t = range.begin(); t < range.end(); ++t) {
+                const string& ticker = ticker_list[t];
+
+                auto it = ticker_global_idx_.find(ticker);
+                if (it == ticker_global_idx_.end()) {
+                    throw runtime_error("Ticker not found: " + ticker);
+                }
+                size_t global_idx = it->second;
+                int first_day = ticker_first_day_.at(ticker);
+
+                TickerWindowData& td = ticker_results[t].second;
+                ticker_results[t].first = ticker;
+
+                // Allocate arrays
+                td.past_ohlc.resize(h * 4, 0.0);
+                td.past_indicators.resize(h * n_ind, 0.0);
+                td.past_mask.resize(h, 0);
+                td.past_days.resize(h, -1);
+
+                td.current_ohlc.resize(4, 0.0);
+                td.current_indicators.resize(n_ind, 0.0);
+                td.current_mask = 0;
+                td.current_day = -1;
+
+                td.future_ohlc.resize(future * 4, 0.0);
+                td.future_indicators.resize(future * n_ind, 0.0);
+                td.future_mask.resize(future, 0);
+                td.future_days.resize(future, -1);
+
+                // Fill past: [day-h, day-1]
+                for (int i = 0; i < h; ++i) {
+                    int d = day - h + i;
+                    if (d >= first_day && d >= 0 && d < max_day_) {
+                        size_t row_idx = ticker_row_table_[global_idx][d];
+                        size_t base = i * 4;
+                        td.past_ohlc[base + 0] = col_open_->get()[row_idx];
+                        td.past_ohlc[base + 1] = col_high_->get()[row_idx];
+                        td.past_ohlc[base + 2] = col_low_->get()[row_idx];
+                        td.past_ohlc[base + 3] = col_close_->get()[row_idx];
+
+                        size_t ind_base = i * n_ind;
+                        for (size_t j = 0; j < n_ind; ++j) {
+                            td.past_indicators[ind_base + j] = indicator_cols_[j].second.get()[row_idx];
+                        }
+                        td.past_mask[i] = 1;
+                        td.past_days[i] = d;
+                    }
+                }
+
+                // Fill current
+                if (day >= first_day && day < max_day_) {
+                    size_t row_idx = ticker_row_table_[global_idx][day];
+                    td.current_ohlc[0] = col_open_->get()[row_idx];
+                    td.current_ohlc[1] = col_high_->get()[row_idx];
+                    td.current_ohlc[2] = col_low_->get()[row_idx];
+                    td.current_ohlc[3] = col_close_->get()[row_idx];
+
+                    for (size_t j = 0; j < n_ind; ++j) {
+                        td.current_indicators[j] = indicator_cols_[j].second.get()[row_idx];
+                    }
+                    td.current_mask = 1;
+                    td.current_day = day;
+                }
+
+                // Fill future: [day+1, day+future]
+                for (int i = 0; i < future; ++i) {
+                    int d = day + 1 + i;
+                    if (d >= first_day && d < max_day_) {
+                        size_t row_idx = ticker_row_table_[global_idx][d];
+                        size_t base = i * 4;
+                        td.future_ohlc[base + 0] = col_open_->get()[row_idx];
+                        td.future_ohlc[base + 1] = col_high_->get()[row_idx];
+                        td.future_ohlc[base + 2] = col_low_->get()[row_idx];
+                        td.future_ohlc[base + 3] = col_close_->get()[row_idx];
+
+                        size_t ind_base = i * n_ind;
+                        for (size_t j = 0; j < n_ind; ++j) {
+                            td.future_indicators[ind_base + j] = indicator_cols_[j].second.get()[row_idx];
+                        }
+                        td.future_mask[i] = 1;
+                        td.future_days[i] = d;
+                    }
+                }
+            }
+        }
+    );
+
+    // Move results to map
+    for (auto& [ticker, data] : ticker_results) {
+        result.tickers[ticker] = move(data);
+    }
+
+    return result;
 }
 
 } // namespace fast_finrl

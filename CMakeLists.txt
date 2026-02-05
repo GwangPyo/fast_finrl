@@ -61,6 +61,8 @@ find_package(Parquet REQUIRED)
 # Main library
 add_library(fast_finrl_lib
     src/FastFinRL.cpp
+    src/DataLoader.cpp
+    src/StateSerializer.cpp
 )
 target_include_directories(fast_finrl_lib PUBLIC include)
 set_target_properties(fast_finrl_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -1,8 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <pybind11/numpy.h>
 #include <cstdint>
 #include "FastFinRL.hpp"
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
 
 namespace py = pybind11;
 
@@ -92,10 +95,11 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Core API methods
         .def("reset", [](fast_finrl::FastFinRL& self,
                          const std::vector<std::string>& ticker_list,
-                         int64_t seed) {
-            return json_to_python(self.reset(ticker_list, seed));
-        }, py::arg("ticker_list"), py::arg("seed"),
-           "Reset environment with given tickers and seed. Returns state dict.")
+                         int64_t seed,
+                         int shifted_start) {
+            return json_to_python(self.reset(ticker_list, seed, shifted_start));
+        }, py::arg("ticker_list"), py::arg("seed"), py::arg("shifted_start") = 0,
+           "Reset environment with given tickers, seed, and shifted_start. Returns state dict with day_idx.")
 
         .def("step", [](fast_finrl::FastFinRL& self,
                         const std::vector<double>& actions) {
@@ -113,5 +117,84 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
         .def("get_raw_value", &fast_finrl::FastFinRL::get_raw_value,
              py::arg("ticker"), py::arg("day"), py::arg("column"),
-             "Get raw value from DataFrame for given ticker, day, and column");
+             "Get raw value from DataFrame for given ticker, day, and column")
+
+        .def("get_market_window", [](const fast_finrl::FastFinRL& self,
+                                     const std::string& ticker,
+                                     int day,
+                                     int h,
+                                     int future) {
+            return json_to_python(self.get_market_window(ticker, day, h, future));
+        }, py::arg("ticker"), py::arg("day"), py::arg("h"), py::arg("future"),
+           "Get market data window: past [day-h, day-1], current day, future [day+1, day+future]")
+
+        .def("get_market_window_flat", [](const fast_finrl::FastFinRL& self,
+                                          const std::string& ticker,
+                                          int day,
+                                          int h,
+                                          int future) {
+            return json_to_python(self.get_market_window_flat(ticker, day, h, future));
+        }, py::arg("ticker"), py::arg("day"), py::arg("h"), py::arg("future"),
+           "Fast version - returns flat arrays: ohlc[n,4], indicators[n,num_ind], mask[n], days[n]")
+
+        .def("get_market_window_numpy", [](const fast_finrl::FastFinRL& self,
+                                           const std::vector<std::string>& ticker_list,
+                                           int day,
+                                           int h,
+                                           int future) -> py::dict {
+            // Get multi-ticker data with separated past/current/future
+            auto raw = self.get_market_window_multi(ticker_list, day, h, future);
+
+            int n_ind = raw.n_indicators;
+            py::dict result;
+
+            // Process each ticker
+            for (const auto& [ticker, td] : raw.tickers) {
+                py::dict ticker_dict;
+
+                // Past arrays
+                py::array_t<double> past_ohlc = py::cast(td.past_ohlc);
+                past_ohlc.resize({h, 4});
+                ticker_dict["past_ohlc"] = past_ohlc;
+
+                py::array_t<double> past_ind = py::cast(td.past_indicators);
+                past_ind.resize({h, n_ind});
+                ticker_dict["past_indicators"] = past_ind;
+
+                ticker_dict["past_mask"] = py::cast(td.past_mask);
+                ticker_dict["past_days"] = py::cast(td.past_days);
+
+                // Current arrays
+                ticker_dict["current_ohlc"] = py::cast(td.current_ohlc);
+                ticker_dict["current_indicators"] = py::cast(td.current_indicators);
+                ticker_dict["current_mask"] = td.current_mask;
+                ticker_dict["current_day"] = td.current_day;
+
+                // Future arrays
+                py::array_t<double> future_ohlc = py::cast(td.future_ohlc);
+                future_ohlc.resize({future, 4});
+                ticker_dict["future_ohlc"] = future_ohlc;
+
+                py::array_t<double> future_ind = py::cast(td.future_indicators);
+                future_ind.resize({future, n_ind});
+                ticker_dict["future_indicators"] = future_ind;
+
+                ticker_dict["future_mask"] = py::cast(td.future_mask);
+                ticker_dict["future_days"] = py::cast(td.future_days);
+
+                result[py::str(ticker)] = ticker_dict;
+            }
+
+            // Metadata
+            py::list names;
+            for (const auto& name : raw.indicator_names) {
+                names.append(py::str(name));
+            }
+            result["indicator_names"] = names;
+            result["h"] = h;
+            result["future"] = future;
+
+            return result;
+        }, py::arg("ticker_list"), py::arg("day"), py::arg("h"), py::arg("future"),
+           "Multi-ticker market window with separated past/current/future numpy arrays");
 }

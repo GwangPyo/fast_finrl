@@ -10,6 +10,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 #include <DataFrame/DataFrame.h>
+#include "StateSerializer.hpp"
 
 using namespace std;
 
@@ -28,28 +29,10 @@ struct FastFinRLConfig {
     vector<string> tech_indicator_list = {};  // empty = auto-detect from CSV
 };
 
-// Forward declaration
-class FastFinRL;
-
-class JsonHandler {
-public:
-    explicit JsonHandler(const FastFinRL& env) : env_(env) {}
-
-    nlohmann::json build_state_json() const;
-    nlohmann::json build_step_result_json(double reward, bool done, bool terminal) const;
-    nlohmann::json build_market_json() const;
-    nlohmann::json build_portfolio_json(bool include_total_asset = false) const;
-
-private:
-    const FastFinRL& env_;
-};
-
 class FastFinRL {
 public:
     using MyDataFrame = hmdf::StdDataFrame<unsigned long>;
     using BidFunction = function<double(size_t)>;
-
-    friend class JsonHandler;
 
     // Configuration attributes (public, set directly like Python)
     double initial_amount;
@@ -64,13 +47,62 @@ public:
     explicit FastFinRL(const string& csv_path, const FastFinRLConfig& config = FastFinRLConfig{});
 
     // Core API
-    nlohmann::json reset(const vector<string>& ticker_list, int64_t seed);
+    nlohmann::json reset(const vector<string>& ticker_list, int64_t seed, int shifted_start = 0);
     nlohmann::json step(const vector<double>& actions);
 
     // Accessors
     set<string> get_indicator_names() const;
     nlohmann::json get_state() const;
     double get_raw_value(const string& ticker, int day, const string& column) const;
+
+    // Market data window query (like DB)
+    // Returns past [day-h, day-1] and future [day+1, day+future] market data
+    nlohmann::json get_market_window(const string& ticker, int day, int h, int future) const;
+
+    // Fast version - returns flat arrays instead of nested JSON objects
+    // Returns: {ohlc: [h+1+f, 4], indicators: [h+1+f, n], mask: [h+1+f], days: [h+1+f]}
+    nlohmann::json get_market_window_flat(const string& ticker, int day, int h, int future) const;
+
+    // Raw data struct for numpy binding (no JSON overhead)
+    struct MarketWindowData {
+        vector<double> ohlc;        // flat [total_len * 4]
+        vector<double> indicators;  // flat [total_len * n_indicators]
+        vector<int> mask;           // [total_len]
+        vector<int> days;           // [total_len]
+        vector<string> indicator_names;
+        int total_len;
+        int n_indicators;
+    };
+    MarketWindowData get_market_window_raw(const string& ticker, int day, int h, int future) const;
+
+    // Separated past/current/future data for a single ticker
+    struct TickerWindowData {
+        // Past: [h, 4], [h, n_ind], [h]
+        vector<double> past_ohlc;
+        vector<double> past_indicators;
+        vector<int> past_mask;
+        vector<int> past_days;
+        // Current: [4], [n_ind]
+        vector<double> current_ohlc;
+        vector<double> current_indicators;
+        int current_mask;
+        int current_day;
+        // Future: [f, 4], [f, n_ind], [f]
+        vector<double> future_ohlc;
+        vector<double> future_indicators;
+        vector<int> future_mask;
+        vector<int> future_days;
+    };
+
+    // Multi-ticker window data
+    struct MultiTickerWindowData {
+        map<string, TickerWindowData> tickers;
+        vector<string> indicator_names;
+        int h;
+        int future;
+        int n_indicators;
+    };
+    MultiTickerWindowData get_market_window_multi(const vector<string>& ticker_list, int day, int h, int future) const;
 
 private:
     // DataFrame storage
@@ -139,9 +171,8 @@ private:
     vector<TradeInfo> trade_info_;
 
     // Internal helpers
-    hmdf::ReadParams build_csv2_schema(const string& csv_path);
     void load_dataframe(const string& path);
-    void load_from_parquet(const string& path);
+    void build_index_tables();
     void extract_indicator_names();
     void setup_tickers(const vector<string>& tickers);
     void update_row_indices();
@@ -158,6 +189,9 @@ private:
     int buy_stock(size_t index, int action);
     void check_stop_loss();
 
+    // State data builder for serialization
+    StateData build_state_data(bool include_step_info, double reward = 0.0, bool done = false, bool terminal = false) const;
+
     // Bidding option function maps
     map<string, BidFunction> sell_bid_options_;
     map<string, BidFunction> buy_bid_options_;
@@ -165,8 +199,8 @@ private:
     double get_sell_bid_price(size_t ticker_idx);
     double get_buy_bid_price(size_t ticker_idx);
 
-    // JSON handler
-    unique_ptr<JsonHandler> json_handler_;
+    // State serializer
+    unique_ptr<IStateSerializer> state_serializer_;
 };
 
 } // namespace fast_finrl
