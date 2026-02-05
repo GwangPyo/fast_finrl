@@ -608,9 +608,9 @@ buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
 
 ## Method Differences
 
-### add_batch(states, actions, rewards, next_states, dones) (NEW)
+### add(states, actions, rewards, next_states, dones)
 
-Add N transitions at once. Primary interface for VecFastFinRL.
+Add N transitions at once. Same interface as ReplayBuffer.
 
 ```python
 # States must have attribute access (.day, .cash, etc.)
@@ -619,7 +619,7 @@ class W:
     def __init__(self, d): self._d = d
     def __getattr__(self, n): return self._d[n]
 
-buffer.add_batch(
+buffer.add(
     [W(s) for s in states],           # List[obj] with .day, .cash, .shares, .avg_buy_price, .tickers, .terminal
     actions,                           # np.ndarray (N, n_tickers)
     [s["reward"] for s in next_states],# List[float] or List[List[float]]
@@ -641,14 +641,6 @@ s["unique_tickers"]  # List[str]: Union of all tickers in batch
 ```
 
 **Note:** `s["tickers"]` is `(batch, n_tickers)` since different samples may have different tickers (when env_id changes and tickers change).
-
----
-
-## Not Implemented
-
-| Feature | Alternative |
-|---------|-------------|
-| `add()` | Use `add_batch()` for vectorized envs |
 
 ---
 
@@ -719,7 +711,7 @@ for step in range(10000):
     actions = model.predict(states)  # (N, 3)
     next_states = vec_env.step(actions)
 
-    buffer.add_batch(
+    buffer.add(
         [W(s) for s in states],
         actions,
         [s["reward"] for s in next_states],

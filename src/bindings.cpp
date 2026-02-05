@@ -1195,8 +1195,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
            "Create VecReplayBuffer from VecFastFinRL instance")
 
-        // add_batch - primary interface for VecFastFinRL
-        .def("add_batch", [](fast_finrl::VecReplayBuffer& self,
+        // add - primary interface for VecFastFinRL
+        .def("add", [](fast_finrl::VecReplayBuffer& self,
                              const py::list& states,
                              py::array_t<double, py::array::c_style> actions_arr,
                              const py::list& rewards_list,
@@ -1381,11 +1381,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             // env_ids [B]
-            py::array_t<int> env_ids(B);
-            int* env_ids_ptr = env_ids.mutable_data();
-            for (int i = 0; i < B; ++i) {
-                env_ids_ptr[i] = holder->env_ids[i];
-            }
+            py::array_t<int> env_ids({B}, {sizeof(int)});
+            std::copy(holder->env_ids.begin(), holder->env_ids.end(), env_ids.mutable_data());
 
             // Actions [B, n_tickers]
             py::array_t<double> actions({B, n_tic},
