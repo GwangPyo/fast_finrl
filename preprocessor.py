@@ -200,18 +200,8 @@ class ObservationPreprocessor:
 
         return result
 
-    def _process_vec(self, states: Union[List[Dict], Dict]) -> Dict[str, Any]:
-        """Process VecFastFinRL states (batch dimension N).
-
-        Supports both:
-        - List[Dict] format (return_format='json')
-        - Dict format with batched arrays (return_format='vec')
-        """
-        # Detect format: vec format has 'n_envs' key
-        if isinstance(states, dict) and 'n_envs' in states:
-            return self._process_vec_format(states)
-
-        # List[Dict] format (json)
+    def _process_vec(self, states: List[Dict]) -> Dict[str, Any]:
+        """Process VecFastFinRL states (batch dimension N)."""
         N = len(states)
         result = {}
 
@@ -381,104 +371,6 @@ class ObservationPreprocessor:
         result["indicator_names"] = self.indicator_names
         result["h"] = self.h
         result["n_envs"] = N
-
-        return result
-
-    def _process_vec_format(self, state: Dict) -> Dict[str, Any]:
-        """Process VecFastFinRL batched dict format (return_format='vec').
-
-        If h=0: return state as-is (already in batched format)
-        If h>0: add market window history to ohlc/indicators
-        """
-        if self.h == 0:
-            # Already in vec format, just pass through with minimal additions
-            result = dict(state)  # shallow copy
-            result["indicator_names"] = self.indicator_names
-            result["h"] = self.h
-            return result
-
-        # h > 0: Need to add historical data
-        N = state['n_envs']
-        n_tickers = state['n_tickers']
-        time_len = self.h + 1
-        days = np.asarray(state['day'])  # (N,)
-        tickers_per_env = state['tickers']  # List[List[str]]
-
-        # Build (N, time_len, n_tickers, 4) ohlc and (N, time_len, n_tickers, n_ind) indicators
-        ohlc_out = np.zeros((N, time_len, n_tickers, 4))
-        ind_out = np.zeros((N, time_len, n_tickers, self.n_indicators))
-        mask_out = np.zeros((N, time_len, n_tickers), dtype=np.int32)
-
-        for i in range(N):
-            tickers = tickers_per_env[i]
-            day = int(days[i])
-
-            for t_idx, ticker in enumerate(tickers):
-                window = self.env.get_market_window_numpy([ticker], day, self.h, 0)
-
-                past_ohlc = window[ticker]["past_ohlc"]  # (h, 4)
-                current_ohlc = window[ticker]["current_ohlc"]  # (4,)
-                ohlc_out[i, :, t_idx, :] = np.vstack([past_ohlc, current_ohlc[np.newaxis, :]])
-
-                past_ind = window[ticker]["past_indicators"]  # (h, n_ind)
-                current_ind = window[ticker]["current_indicators"]  # (n_ind,)
-                ind_out[i, :, t_idx, :] = np.vstack([past_ind, current_ind[np.newaxis, :]])
-
-                mask_out[i, :, t_idx] = np.concatenate([
-                    window[ticker]["past_mask"],
-                    [window[ticker]["current_mask"]]
-                ])
-
-        # Build result
-        result = {
-            "ohlc": ohlc_out,              # (N, time_len, n_tickers, 4)
-            "indicators": ind_out,          # (N, time_len, n_tickers, n_ind)
-            "mask": mask_out,               # (N, time_len, n_tickers)
-            "day": days,
-            "cash": np.asarray(state["cash"]),
-            "shares": np.asarray(state["shares"]),
-            "avg_buy_price": np.asarray(state["avg_buy_price"]),
-            "total_asset": np.asarray(state.get("total_asset", np.zeros(N))),
-            "done": np.asarray(state.get("done", np.zeros(N, dtype=bool))),
-            "terminal": np.asarray(state.get("terminal", np.zeros(N, dtype=bool))),
-            "reward": np.asarray(state.get("reward", np.zeros(N))),
-            "tickers": tickers_per_env,
-            "n_envs": N,
-            "n_tickers": n_tickers,
-            "n_indicators": self.n_indicators,
-            "indicator_names": self.indicator_names,
-            "h": self.h,
-        }
-
-        # Macro if present
-        if self.include_macro and self.n_macro > 0 and "macro_ohlc" in state:
-            macro_ohlc_out = np.zeros((N, time_len, self.n_macro, 4))
-            macro_ind_out = np.zeros((N, time_len, self.n_macro, self.n_indicators))
-            macro_mask_out = np.zeros((N, time_len, self.n_macro), dtype=np.int32)
-
-            for i in range(N):
-                day = int(days[i])
-                for m_idx, ticker in enumerate(self.macro_tickers):
-                    window = self.env.get_market_window_numpy([ticker], day, self.h, 0)
-
-                    past_ohlc = window[ticker]["past_ohlc"]
-                    current_ohlc = window[ticker]["current_ohlc"]
-                    macro_ohlc_out[i, :, m_idx, :] = np.vstack([past_ohlc, current_ohlc[np.newaxis, :]])
-
-                    past_ind = window[ticker]["past_indicators"]
-                    current_ind = window[ticker]["current_indicators"]
-                    macro_ind_out[i, :, m_idx, :] = np.vstack([past_ind, current_ind[np.newaxis, :]])
-
-                    macro_mask_out[i, :, m_idx] = np.concatenate([
-                        window[ticker]["past_mask"],
-                        [window[ticker]["current_mask"]]
-                    ])
-
-            result["macro_ohlc"] = macro_ohlc_out
-            result["macro_indicators"] = macro_ind_out
-            result["macro_mask"] = macro_mask_out
-            result["n_macro"] = self.n_macro
-            result["macro_tickers"] = self.macro_tickers
 
         return result
 
