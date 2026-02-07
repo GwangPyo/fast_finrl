@@ -43,7 +43,7 @@ py::object json_to_python(const nlohmann::json& j) {
 
 // Helper to parse return_format string
 inline fast_finrl::ReturnFormat parse_return_format(const std::string& fmt) {
-    if (fmt == "vec") return fast_finrl::ReturnFormat::Vec;
+    if (fmt == "vec" || fmt == "vector") return fast_finrl::ReturnFormat::Vec;
     return fast_finrl::ReturnFormat::Json;
 }
 
@@ -1050,6 +1050,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          double stop_loss_tolerance,
                          const std::string& bidding,
                          const std::string& stop_loss_calculation,
+                         int64_t initial_seed,
                          const std::vector<std::string>& tech_indicator_list,
                          const std::vector<std::string>& macro_tickers,
                          bool auto_reset,
@@ -1064,6 +1065,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.stop_loss_tolerance = stop_loss_tolerance;
             config.bidding = bidding;
             config.stop_loss_calculation = stop_loss_calculation;
+            config.initial_seed = initial_seed;
             config.tech_indicator_list = tech_indicator_list;
             config.macro_tickers = macro_tickers;
             config.return_format = parse_return_format(return_format);
@@ -1080,6 +1082,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("stop_loss_tolerance") = 0.8,
              py::arg("bidding") = "default",
              py::arg("stop_loss_calculation") = "close",
+             py::arg("initial_seed") = 0,
              py::arg("tech_indicator_list") = std::vector<std::string>{},
              py::arg("macro_tickers") = std::vector<std::string>{},
              py::arg("auto_reset") = true,

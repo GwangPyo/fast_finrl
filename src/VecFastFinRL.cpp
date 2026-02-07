@@ -15,6 +15,7 @@ VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLCo
     , auto_reset_(true)
     , return_format_(config.return_format)
     , num_envs_(n_envs)
+    , last_base_seed_(config.initial_seed)
 {
     if (n_envs <= 0) {
         throw runtime_error("n_envs must be > 0");
