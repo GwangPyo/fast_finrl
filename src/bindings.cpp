@@ -485,8 +485,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
             return std::make_unique<fast_finrl::ReplayBuffer>(
                 std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
-        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
-           "Create ReplayBuffer. capacity: 100K (small), 1M (default), 5M (large). seed: -1 for random, >= 0 for reproducible")
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
+           "Create ReplayBuffer. capacity: 100K (small), 1M (default), 5M (large). seed: 42 default for reproducibility")
         .def("add", [](fast_finrl::ReplayBuffer& self,
                        const py::dict& state,
                        const std::vector<double>& action,
@@ -1176,14 +1176,14 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
             return std::make_unique<fast_finrl::VecReplayBuffer>(
                 std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
-        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
-           "Create VecReplayBuffer from FastFinRL instance. seed: -1 for random, >= 0 for reproducible")
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
+           "Create VecReplayBuffer from FastFinRL instance. seed: 42 default for reproducibility")
 
         // Constructor from VecFastFinRL
         .def(py::init([](fast_finrl::VecFastFinRL& vec_env, size_t capacity, size_t batch_size, int64_t seed) {
             return std::make_unique<fast_finrl::VecReplayBuffer>(vec_env, capacity, batch_size, seed);
-        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
-           "Create VecReplayBuffer from VecFastFinRL instance. seed: -1 for random, >= 0 for reproducible")
+        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
+           "Create VecReplayBuffer from VecFastFinRL instance. seed: 42 default for reproducibility")
 
         // add_transition - add single transition (for testing)
         .def("add_transition", [](fast_finrl::VecReplayBuffer& self,

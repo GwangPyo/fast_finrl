@@ -310,7 +310,7 @@ buffer = ReplayBuffer(
     env: FastFinRL,
     capacity: int = 1_000_000,
     batch_size: int = 256,
-    seed: int = -1
+    seed: int = 42
 )
 ```
 
@@ -319,7 +319,7 @@ buffer = ReplayBuffer(
 | `env` | FastFinRL | required | Environment instance (used for market data lookup) |
 | `capacity` | int | 1,000,000 | Maximum transitions to store |
 | `batch_size` | int | 256 | Default batch size for sample() |
-| `seed` | int | -1 | Random seed for sampling. -1 = random_device (non-deterministic). ≥0 = reproducible sampling |
+| `seed` | int | 42 | Random seed for sampling. Default 42 for reproducibility. -1 = random_device (non-deterministic) |
 
 ---
 
@@ -627,10 +627,10 @@ Replay buffer for vectorized environments. **Inherits all ReplayBuffer features*
 
 ```python
 # From VecFastFinRL (recommended)
-buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256, seed=-1)
+buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256)
 
 # From FastFinRL (also works)
-buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256, seed=-1)
+buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
 ```
 
 | Parameter | Type | Default | Description |
@@ -638,7 +638,7 @@ buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256, seed=-1)
 | `env` / `vec_env` | FastFinRL or VecFastFinRL | required | Environment instance |
 | `capacity` | int | 1,000,000 | Maximum transitions to store |
 | `batch_size` | int | 256 | Default batch size for sample() |
-| `seed` | int | -1 | Random seed for sampling. -1 = random_device (non-deterministic). ≥0 = reproducible sampling |
+| `seed` | int | 42 | Random seed for sampling. Default 42 for reproducibility. -1 = random_device (non-deterministic) |
 
 ---
 

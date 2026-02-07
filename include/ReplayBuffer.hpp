@@ -36,11 +36,11 @@ public:
     using MultiTickerWindowData = FastFinRL::MultiTickerWindowData;
 
     // capacity: 100K (small), 1M (default), 5M (large)
-    // seed: -1 for random_device, >= 0 for reproducible sampling
+    // seed: default 42 for reproducibility, -1 for random_device
     explicit ReplayBuffer(std::shared_ptr<const FastFinRL> env,
                           size_t capacity = 1000000,
                           size_t batch_size = 256,
-                          int64_t seed = -1);
+                          int64_t seed = 42);
 
     // Add transition to buffer (circular)
     void add(const StoredTransition& transition);
