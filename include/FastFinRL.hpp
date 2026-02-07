@@ -59,6 +59,7 @@ public:
 
     // Core API
     nlohmann::json reset(const vector<string>& ticker_list, int64_t seed, int shifted_start = 0);
+    nlohmann::json reset();  // No-arg reset: keep same tickers, increment seed
     nlohmann::json step(const vector<double>& actions);
 
     // Accessors

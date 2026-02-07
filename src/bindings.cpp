@@ -232,6 +232,83 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }, py::arg("ticker_list"), py::arg("seed"), py::arg("shifted_start") = 0,
            "Reset environment with given tickers, seed, and shifted_start. Returns state dict.")
 
+        // No-arg reset: keep same tickers, increment seed
+        .def("reset", [](fast_finrl::FastFinRL& self) -> py::object {
+            auto json_state = self.reset();
+
+            if (self.return_format == fast_finrl::ReturnFormat::Vec) {
+                // Vec format conversion (same as above)
+                py::dict state;
+                state["day"] = json_state["day"].get<int>();
+                state["date"] = json_state["date"].get<std::string>();
+                state["seed"] = json_state["seed"].get<int64_t>();
+                state["done"] = json_state["done"].get<bool>();
+                state["terminal"] = json_state["terminal"].get<bool>();
+                state["reward"] = json_state.value("reward", 0.0);
+
+                auto& portfolio = json_state["portfolio"];
+                state["cash"] = portfolio["cash"].get<double>();
+                state["total_asset"] = portfolio.value("total_asset", 0.0);
+
+                // Get ticker list from market keys
+                auto& market = json_state["market"];
+                std::vector<std::string> ticker_list;
+                for (auto it = market.begin(); it != market.end(); ++it) {
+                    ticker_list.push_back(it.key());
+                }
+                std::sort(ticker_list.begin(), ticker_list.end());
+
+                auto& holdings = portfolio["holdings"];
+                int n_tic = static_cast<int>(ticker_list.size());
+
+                py::array_t<int> shares(n_tic);
+                py::array_t<double> avg_buy_price(n_tic);
+                int* shares_ptr = shares.mutable_data();
+                double* avg_ptr = avg_buy_price.mutable_data();
+
+                for (int i = 0; i < n_tic; ++i) {
+                    const auto& h = holdings[ticker_list[i]];
+                    shares_ptr[i] = h["shares"].get<int>();
+                    avg_ptr[i] = h["avg_buy_price"].get<double>();
+                }
+                state["shares"] = shares;
+                state["avg_buy_price"] = avg_buy_price;
+
+                auto indicator_names = self.get_indicator_names();
+                int n_ind = static_cast<int>(indicator_names.size());
+
+                py::array_t<double> open_arr({n_tic});
+                py::array_t<double> indicators({n_tic, n_ind});
+                double* open_ptr = open_arr.mutable_data();
+                double* ind_ptr = indicators.mutable_data();
+
+                for (int i = 0; i < n_tic; ++i) {
+                    const auto& m = market[ticker_list[i]];
+                    open_ptr[i] = m["open"].get<double>();
+
+                    const auto& inds = m["indicators"];
+                    int j = 0;
+                    for (const auto& ind_name : indicator_names) {
+                        ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                        ++j;
+                    }
+                }
+                state["open"] = open_arr;
+                state["indicators"] = indicators;
+                state["tickers"] = ticker_list;
+
+                py::list ind_names;
+                for (const auto& name : indicator_names) {
+                    ind_names.append(name);
+                }
+                state["indicator_names"] = ind_names;
+
+                return state;
+            }
+
+            return json_to_python(json_state);
+        }, "Reset with no args: keep same tickers, increment seed.")
+
         .def("step", [](fast_finrl::FastFinRL& self,
                         const std::vector<double>& actions) -> py::object {
             auto json_state = self.step(actions);
@@ -965,6 +1042,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
     // VecFastFinRL - Vectorized environment for N parallel environments
     py::class_<fast_finrl::VecFastFinRL>(m, "VecFastFinRL")
         .def(py::init([](const std::string& csv_path,
+                         int n_envs,
                          double initial_amount,
                          int hmax,
                          double buy_cost_pct,
@@ -991,9 +1069,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.return_format = parse_return_format(return_format);
             config.num_tickers = num_tickers;
             config.shuffle_tickers = shuffle_tickers;
-            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, config);
+            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, n_envs, config);
         }),
              py::arg("csv_path"),
+             py::arg("n_envs"),
              py::arg("initial_amount") = 30000.0,
              py::arg("hmax") = 15,
              py::arg("buy_cost_pct") = 0.01,
@@ -1007,7 +1086,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("return_format") = "json",
              py::arg("num_tickers") = 0,
              py::arg("shuffle_tickers") = false,
-             "Create VecFastFinRL - vectorized environment managing N parallel environments")
+             "Create VecFastFinRL - vectorized environment. n_envs: number of parallel environments (required)")
 
         // Return format control
         .def("set_return_format", [](fast_finrl::VecFastFinRL& self, const std::string& fmt) {
@@ -1018,6 +1097,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }, "Get current return format")
 
         // reset -> returns list of dicts (json) or single dict (vec)
+        // Full reset with explicit tickers and seeds (vector)
         .def("reset", [&step_result_to_list, &step_result_to_vec](
                          fast_finrl::VecFastFinRL& self,
                          const std::vector<std::vector<std::string>>& tickers_list,
@@ -1027,13 +1107,46 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             std::vector<int64_t> seeds(seeds_ptr, seeds_ptr + seeds_buf.size);
 
             auto result = self.reset(tickers_list, seeds);
+            const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers_list);
+                return step_result_to_vec(result, tickers);
             }
-            return step_result_to_list(result, tickers_list);
+            return step_result_to_list(result, tickers);
         }, py::arg("tickers_list"), py::arg("seeds"),
-           "Reset N environments. Returns List[dict] (json) or dict (vec) based on return_format.")
+           "Reset N environments with explicit tickers and seeds.")
+
+        // Simplified reset: single seed, auto-expand to all envs
+        .def("reset", [&step_result_to_list, &step_result_to_vec](
+                         fast_finrl::VecFastFinRL& self,
+                         std::optional<std::vector<std::vector<std::string>>> tickers_list_opt,
+                         int64_t seed) -> py::object {
+            std::vector<std::vector<std::string>> tickers_list;
+            if (tickers_list_opt.has_value()) {
+                tickers_list = tickers_list_opt.value();
+            }
+
+            auto result = self.reset(tickers_list, seed);
+            const auto& tickers = self.get_tickers();
+
+            if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
+                return step_result_to_vec(result, tickers);
+            }
+            return step_result_to_list(result, tickers);
+        }, py::arg("tickers_list") = py::none(), py::arg("seed"),
+           "Simplified reset: single seed auto-expands to all envs.")
+
+        // No-arg reset: keep same tickers, auto-increment seeds
+        .def("reset", [&step_result_to_list, &step_result_to_vec](
+                         fast_finrl::VecFastFinRL& self) -> py::object {
+            auto result = self.reset();
+            const auto& tickers = self.get_tickers();
+
+            if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
+                return step_result_to_vec(result, tickers);
+            }
+            return step_result_to_list(result, tickers);
+        }, "Reset with no args: keep same tickers, increment seeds.")
 
         // step -> returns list of dicts (json) or single dict (vec)
         .def("step", [&step_result_to_list, &step_result_to_vec](
@@ -1180,9 +1293,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
            "Create VecReplayBuffer from FastFinRL instance. seed: 42 default for reproducibility")
 
         // Constructor from VecFastFinRL
-        .def(py::init([](fast_finrl::VecFastFinRL& vec_env, size_t capacity, size_t batch_size, int64_t seed) {
-            return std::make_unique<fast_finrl::VecReplayBuffer>(vec_env, capacity, batch_size, seed);
-        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
+        .def(py::init([](fast_finrl::VecFastFinRL& env, size_t capacity, size_t batch_size, int64_t seed) {
+            return std::make_unique<fast_finrl::VecReplayBuffer>(env, capacity, batch_size, seed);
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
            "Create VecReplayBuffer from VecFastFinRL instance. seed: 42 default for reproducibility")
 
         // add_transition - add single transition (for testing)

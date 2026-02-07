@@ -378,6 +378,14 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed,
     return state_serializer_->serialize(build_state_data(false), false);
 }
 
+nlohmann::json FastFinRL::reset() {
+    // No-arg reset: keep same tickers, increment seed
+    if (active_tickers_.empty()) {
+        throw runtime_error("reset() requires previous reset() call with tickers");
+    }
+    return reset(active_tickers_, current_seed_ + 1, 0);
+}
+
 int FastFinRL::sell_stock(size_t index, int action) {
     if (shares_[index] <= 0) return 0;
 

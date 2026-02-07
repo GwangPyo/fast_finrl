@@ -33,11 +33,21 @@ public:
     };
 
     // Constructor
-    explicit VecFastFinRL(const string& csv_path, const FastFinRLConfig& config = FastFinRLConfig{});
+    // n_envs: number of parallel environments (required, must be > 0)
+    explicit VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config = FastFinRLConfig{});
 
     // Core API
+    // Full reset with explicit tickers and seeds
     // tickers_list: [N][n_tickers] - each env can have different tickers (same count)
     StepResult reset(const vector<vector<string>>& tickers_list, const vector<int64_t>& seeds);
+
+    // Simplified reset: single seed, auto-expand to all envs
+    // seed: base seed (each env gets seed derived via prime multiplication)
+    // If tickers_list is empty, use previous tickers (or shuffle if enabled)
+    StepResult reset(const vector<vector<string>>& tickers_list, int64_t seed);
+
+    // Reset with no args: keep same tickers, auto-increment seeds
+    StepResult reset();
 
     // Partial reset - reset only specified environment indices
     // indices: env indices to reset (e.g., [0, 2, 5])
@@ -95,6 +105,7 @@ private:
     vector<double> avg_buy_price_;                // [N * n_tickers]
     vector<int64_t> seeds_;                       // [N]
     vector<mt19937> rngs_;                        // [N]
+    int64_t last_base_seed_ = 0;                  // base seed from last reset
 
     // Per-env episode tracking
     vector<int> num_stop_loss_;                   // [N]

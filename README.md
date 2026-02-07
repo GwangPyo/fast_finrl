@@ -117,6 +117,20 @@ state = env.reset([], seed=42)  # Randomly selects 5 tickers, sorted alphabetica
 
 ---
 
+### reset() -> state (no args)
+
+Continue with same tickers, increment seed.
+
+```python
+state = env.reset(["AAPL", "GOOGL"], seed=42)  # First reset
+state = env.reset()  # Keep same tickers, seed becomes 43
+state = env.reset()  # Keep same tickers, seed becomes 44
+```
+
+**Returns:** State dict. Raises error if no previous reset() was called.
+
+---
+
 ### step(actions) -> state
 
 Execute one trading step.
@@ -459,6 +473,8 @@ N parallel environments with TBB parallelization. **Inherits all FastFinRL featu
 
 ```python
 VecFastFinRL(
+    csv_path: str,
+    n_envs: int = 0,            # NEW: Number of parallel envs (0 = determined at first reset)
     ...,                        # Same as FastFinRL
     auto_reset: bool = True,    # NEW: Auto-reset done envs with seed+1
     return_format: str = "json",# "json" returns List[dict], "vec" returns single dict
@@ -469,6 +485,7 @@ VecFastFinRL(
 
 | New Parameter | Type | Default | Description |
 |---------------|------|---------|-------------|
+| `n_envs` | int | required | Number of parallel environments (must be > 0) |
 | `auto_reset` | bool | True | When env is done, automatically reset with seed+1 |
 | `num_tickers` | int | 0 | Number of tickers for shuffle mode. 0 = use all provided tickers |
 | `shuffle_tickers` | bool | False | When True, reset() randomly selects num_tickers per env. Each env can have different tickers |
@@ -480,6 +497,8 @@ VecFastFinRL(
 ## Method Differences
 
 ### reset(tickers_list, seeds) -> states
+
+Full reset with explicit tickers and per-env seeds.
 
 ```python
 tickers_list = [["AAPL", "GOOGL"], ["MSFT", "AAPL"]]  # N=2 envs
@@ -496,6 +515,33 @@ states = vec_env.reset([[], [], []], seeds=np.array([1, 2, 3]))
 |-----------|------|-------------|
 | `tickers_list` | List[List[str]] | Shape (N, n_tickers). Pass empty lists `[[],[],...]` for shuffle mode |
 | `seeds` | np.ndarray[int64] | Shape (N,). Per-env random seeds (also controls shuffle) |
+
+---
+
+### reset(tickers_list=None, seed=None) -> states (simplified)
+
+Simplified reset with single seed that auto-expands to all envs.
+
+```python
+# Pre-set n_envs in constructor
+vec_env = VecFastFinRL("data.csv", n_envs=4, num_tickers=3, shuffle_tickers=True)
+
+# Single seed expands to all envs via prime multiplication
+states = vec_env.reset(None, seed=42)
+
+# Keep same tickers, new seeds
+states = vec_env.reset(None, seed=100)
+
+# No-arg reset: keep same tickers, auto-increment seeds
+states = vec_env.reset()
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tickers_list` | List[List[str]] or None | None = use previous tickers (or shuffle if enabled) |
+| `seed` | int or None | Single seed. Auto-expands to N seeds via: `seeds[i] = (seed * (i+1) * PRIME) % (PRIME-1)` |
+
+**Seed expansion:** Single seed is expanded to per-env seeds using prime multiplication (15485863, the 10^6th prime). This ensures different but reproducible seeds for each env.
 
 **Returns:**
 - `return_format="json"`: `List[dict]` of length N

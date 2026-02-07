@@ -7,11 +7,19 @@
 
 namespace fast_finrl {
 
-VecFastFinRL::VecFastFinRL(const string& csv_path, const FastFinRLConfig& config)
+// Large prime for seed generation (10^6th prime)
+static constexpr int64_t SEED_PRIME = 15485863LL;
+
+VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config)
     : config_(config)
     , auto_reset_(true)
     , return_format_(config.return_format)
+    , num_envs_(n_envs)
 {
+    if (n_envs <= 0) {
+        throw runtime_error("n_envs must be > 0");
+    }
+
     // Create base environment for shared market data
     base_env_ = make_shared<FastFinRL>(csv_path, config);
     max_day_ = base_env_->get_max_day();
@@ -135,6 +143,46 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
         });
 
     return buffer_;
+}
+
+VecFastFinRL::StepResult VecFastFinRL::reset(
+    const vector<vector<string>>& tickers_list,
+    int64_t seed)
+{
+    // Validate tickers_list matches n_envs if provided
+    if (!tickers_list.empty() && static_cast<int>(tickers_list.size()) != num_envs_) {
+        throw runtime_error("tickers_list.size() must match n_envs (" + to_string(num_envs_) + ")");
+    }
+
+    // Store base seed for no-arg reset
+    last_base_seed_ = seed;
+
+    // Generate per-env seeds using prime multiplication
+    vector<int64_t> seeds(num_envs_);
+    for (int i = 0; i < num_envs_; ++i) {
+        seeds[i] = (seed * (i + 1) * SEED_PRIME) % (SEED_PRIME - 1);
+    }
+
+    // Use previous tickers if tickers_list is empty
+    vector<vector<string>> effective_tickers_list = tickers_list;
+    if (tickers_list.empty() && !tickers_.empty()) {
+        effective_tickers_list = tickers_;
+    } else if (tickers_list.empty()) {
+        // Create empty tickers for each env (will be filled by shuffle if enabled)
+        effective_tickers_list.assign(num_envs_, vector<string>{});
+    }
+
+    return reset(effective_tickers_list, seeds);
+}
+
+VecFastFinRL::StepResult VecFastFinRL::reset() {
+    // No-arg reset: keep same tickers, auto-increment seeds
+    if (tickers_.empty()) {
+        throw runtime_error("reset() requires previous reset() call with tickers");
+    }
+
+    // Increment base seed
+    return reset(tickers_, last_base_seed_ + 1);
 }
 
 void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
