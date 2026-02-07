@@ -1162,6 +1162,20 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 throw std::runtime_error("actions must be 2D array [N, n_tickers]");
             }
 
+            int expected_n_envs = self.num_envs();
+            int expected_n_tickers = self.n_tickers();
+
+            if (actions_buf.shape[0] != expected_n_envs) {
+                throw std::runtime_error(
+                    "actions shape[0] mismatch: expected " + std::to_string(expected_n_envs) +
+                    " (n_envs), got " + std::to_string(actions_buf.shape[0]));
+            }
+            if (actions_buf.shape[1] != expected_n_tickers) {
+                throw std::runtime_error(
+                    "actions shape[1] mismatch: expected " + std::to_string(expected_n_tickers) +
+                    " (n_tickers), got " + std::to_string(actions_buf.shape[1]));
+            }
+
             const double* actions_ptr = static_cast<const double*>(actions_buf.ptr);
             auto result = self.step(actions_ptr);
             const auto& tickers = self.get_tickers();

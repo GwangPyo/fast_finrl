@@ -50,12 +50,15 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 
     for (int i = 0; i < num_envs_; ++i) {
         if (tickers_list[i].empty()) {
-            if (config_.shuffle_tickers && config_.num_tickers > 0) {
-                // Shuffle and select num_tickers
-                mt19937 rng(static_cast<unsigned int>(seeds[i]));
-                shuffle(all_tics.begin(), all_tics.end(), rng);
-                int n = min(config_.num_tickers, static_cast<int>(all_tics.size()));
-                vector<string> selected(all_tics.begin(), all_tics.begin() + n);
+            if (config_.num_tickers > 0) {
+                // Select num_tickers (shuffle if enabled)
+                vector<string> candidates = all_tics;
+                if (config_.shuffle_tickers) {
+                    mt19937 rng(static_cast<unsigned int>(seeds[i]));
+                    shuffle(candidates.begin(), candidates.end(), rng);
+                }
+                int n = min(config_.num_tickers, static_cast<int>(candidates.size()));
+                vector<string> selected(candidates.begin(), candidates.begin() + n);
                 sort(selected.begin(), selected.end());
                 effective_tickers_list[i] = selected;
             } else {
