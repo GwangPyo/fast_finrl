@@ -959,28 +959,30 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
         py::dict state;
 
-        // Scalars: [N]
-        py::array_t<int> day(N);
-        py::array_t<double> cash(N);
-        py::array_t<double> total_asset(N);
-        py::array_t<bool> done(N);
-        py::array_t<bool> terminal(N);
-        py::array_t<double> reward(N);
+        // Scalars: [N] - use explicit shape and strides
+        std::vector<ssize_t> shape_1d = {N};
+        std::vector<ssize_t> stride_int = {static_cast<ssize_t>(sizeof(int))};
+        std::vector<ssize_t> stride_double = {static_cast<ssize_t>(sizeof(double))};
+        std::vector<ssize_t> stride_bool = {static_cast<ssize_t>(sizeof(bool))};
 
-        int* day_ptr = day.mutable_data();
-        double* cash_ptr = cash.mutable_data();
-        double* total_asset_ptr = total_asset.mutable_data();
+        py::array_t<int> day(shape_1d, stride_int);
+        py::array_t<double> cash(shape_1d, stride_double);
+        py::array_t<double> total_asset(shape_1d, stride_double);
+        py::array_t<bool> done(shape_1d, stride_bool);
+        py::array_t<bool> terminal(shape_1d, stride_bool);
+        py::array_t<double> reward(shape_1d, stride_double);
+
+        std::memcpy(day.mutable_data(), result.day.data(), N * sizeof(int));
+        std::memcpy(cash.mutable_data(), result.cash.data(), N * sizeof(double));
+        std::memcpy(total_asset.mutable_data(), result.total_asset.data(), N * sizeof(double));
+        std::memcpy(reward.mutable_data(), result.reward.data(), N * sizeof(double));
+
+        // done/terminal: uint8_t -> bool
         bool* done_ptr = done.mutable_data();
         bool* terminal_ptr = terminal.mutable_data();
-        double* reward_ptr = reward.mutable_data();
-
         for (int i = 0; i < N; ++i) {
-            day_ptr[i] = result.day[i];
-            cash_ptr[i] = result.cash[i];
-            total_asset_ptr[i] = result.total_asset[i];
             done_ptr[i] = (result.done[i] != 0);
             terminal_ptr[i] = (result.terminal[i] != 0);
-            reward_ptr[i] = result.reward[i];
         }
 
         state["day"] = day;
