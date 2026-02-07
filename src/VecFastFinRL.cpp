@@ -41,26 +41,25 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
         throw runtime_error("tickers_list cannot be empty");
     }
 
-    // Handle shuffle_tickers: if enabled and tickers_list[i] is empty, generate random tickers
+    // Handle empty tickers_list[i]: use shuffle if enabled, otherwise use all tickers
     vector<vector<string>> effective_tickers_list = tickers_list;
+    const auto& all_tickers_set = base_env_->get_all_tickers();
+    vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
+    sort(all_tics.begin(), all_tics.end());
 
-    if (config_.shuffle_tickers && config_.num_tickers > 0) {
-        const auto& all_tickers_set = base_env_->get_all_tickers();
-        vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
-
-        for (int i = 0; i < num_envs_; ++i) {
-            if (tickers_list[i].empty()) {
-                // Create per-env RNG with seed
-                mt19937 rng(static_cast<unsigned int>(seeds[i]));
-
+    for (int i = 0; i < num_envs_; ++i) {
+        if (tickers_list[i].empty()) {
+            if (config_.shuffle_tickers && config_.num_tickers > 0) {
                 // Shuffle and select num_tickers
+                mt19937 rng(static_cast<unsigned int>(seeds[i]));
                 shuffle(all_tics.begin(), all_tics.end(), rng);
                 int n = min(config_.num_tickers, static_cast<int>(all_tics.size()));
                 vector<string> selected(all_tics.begin(), all_tics.begin() + n);
-
-                // Sort for consistency
                 sort(selected.begin(), selected.end());
                 effective_tickers_list[i] = selected;
+            } else {
+                // Use all tickers (sorted)
+                effective_tickers_list[i] = all_tics;
             }
         }
     }
@@ -176,13 +175,18 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 }
 
 VecFastFinRL::StepResult VecFastFinRL::reset() {
-    // No-arg reset: keep same tickers, auto-increment seeds
+    // No-arg reset: keep same tickers (or empty for shuffle/all), increment seed
+    vector<vector<string>> tickers_to_use;
+
     if (tickers_.empty()) {
-        throw runtime_error("reset() requires previous reset() call with tickers");
+        // No previous tickers - use empty lists (shuffle will fill, or main reset will use all)
+        tickers_to_use.assign(num_envs_, vector<string>{});
+    } else {
+        tickers_to_use = tickers_;
     }
 
     // Increment base seed
-    return reset(tickers_, last_base_seed_ + 1);
+    return reset(tickers_to_use, last_base_seed_ + 1);
 }
 
 void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
