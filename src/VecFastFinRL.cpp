@@ -26,6 +26,42 @@ VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLCo
     max_day_ = base_env_->get_max_day();
     n_indicators_ = static_cast<int>(base_env_->get_indicator_names().size());
     n_macro_ = static_cast<int>(config.macro_tickers.size());
+
+    // Initialize n_tickers based on config (before reset)
+    if (config.num_tickers > 0) {
+        n_tickers_ = config.num_tickers;
+    } else {
+        n_tickers_ = static_cast<int>(base_env_->get_all_tickers().size());
+    }
+
+    // Initialize default tickers (before reset)
+    const auto& all_tickers_set = base_env_->get_all_tickers();
+    vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
+    sort(all_tics.begin(), all_tics.end());
+
+    if (config.num_tickers > 0) {
+        if (config.shuffle_tickers) {
+            // Shuffle with initial_seed for each env
+            for (int i = 0; i < num_envs_; ++i) {
+                vector<string> candidates = all_tics;
+                int64_t env_seed = (config.initial_seed * (i + 1) * SEED_PRIME) % (SEED_PRIME - 1);
+                mt19937 rng(static_cast<unsigned int>(env_seed));
+                shuffle(candidates.begin(), candidates.end(), rng);
+                int n = min(config.num_tickers, static_cast<int>(candidates.size()));
+                vector<string> selected(candidates.begin(), candidates.begin() + n);
+                sort(selected.begin(), selected.end());
+                tickers_.push_back(selected);
+            }
+        } else {
+            // Fixed first N tickers (alphabetical)
+            int n = min(config.num_tickers, static_cast<int>(all_tics.size()));
+            vector<string> selected(all_tics.begin(), all_tics.begin() + n);
+            tickers_.assign(num_envs_, selected);
+        }
+    } else {
+        // All tickers
+        tickers_.assign(num_envs_, all_tics);
+    }
 }
 
 VecFastFinRL::StepResult VecFastFinRL::reset(
@@ -51,16 +87,21 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     for (int i = 0; i < num_envs_; ++i) {
         if (tickers_list[i].empty()) {
             if (config_.num_tickers > 0) {
-                // Select num_tickers (shuffle if enabled)
-                vector<string> candidates = all_tics;
                 if (config_.shuffle_tickers) {
+                    // Shuffle and select num_tickers (each env different)
+                    vector<string> candidates = all_tics;
                     mt19937 rng(static_cast<unsigned int>(seeds[i]));
                     shuffle(candidates.begin(), candidates.end(), rng);
+                    int n = min(config_.num_tickers, static_cast<int>(candidates.size()));
+                    vector<string> selected(candidates.begin(), candidates.begin() + n);
+                    sort(selected.begin(), selected.end());
+                    effective_tickers_list[i] = selected;
+                } else {
+                    // First num_tickers alphabetically (all envs same)
+                    int n = min(config_.num_tickers, static_cast<int>(all_tics.size()));
+                    vector<string> selected(all_tics.begin(), all_tics.begin() + n);
+                    effective_tickers_list[i] = selected;
                 }
-                int n = min(config_.num_tickers, static_cast<int>(candidates.size()));
-                vector<string> selected(candidates.begin(), candidates.begin() + n);
-                sort(selected.begin(), selected.end());
-                effective_tickers_list[i] = selected;
             } else {
                 // Use all tickers (sorted)
                 effective_tickers_list[i] = all_tics;
