@@ -570,34 +570,62 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                        py::object reward,
                        const py::dict& next_state,
                        bool done) {
-            // Extract from state dicts
-            int state_day = state["day"].cast<int>();
-            int next_state_day = next_state["day"].cast<int>();
-
-            py::dict portfolio = state["portfolio"].cast<py::dict>();
-            py::dict next_portfolio = next_state["portfolio"].cast<py::dict>();
-            py::dict holdings = portfolio["holdings"].cast<py::dict>();
-            py::dict next_holdings = next_portfolio["holdings"].cast<py::dict>();
-
-            double state_cash = portfolio["cash"].cast<double>();
-            double next_state_cash = next_portfolio["cash"].cast<double>();
-
+            int state_day, next_state_day;
+            double state_cash, next_state_cash;
             std::vector<std::string> tickers;
             std::vector<int> state_shares, next_state_shares;
             std::vector<double> state_avg, next_state_avg;
 
-            for (auto item : holdings) {
-                std::string tic = item.first.cast<std::string>();
-                tickers.push_back(tic);
-                py::dict h = item.second.cast<py::dict>();
-                state_shares.push_back(h["shares"].cast<int>());
-                state_avg.push_back(h["avg_buy_price"].cast<double>());
-            }
+            // Auto-detect format: json has 'portfolio', vec has 'cash' directly
+            if (state.contains("portfolio")) {
+                // JSON format
+                state_day = state["day"].cast<int>();
+                next_state_day = next_state["day"].cast<int>();
 
-            for (const auto& tic : tickers) {
-                py::dict h = next_holdings[py::str(tic)].cast<py::dict>();
-                next_state_shares.push_back(h["shares"].cast<int>());
-                next_state_avg.push_back(h["avg_buy_price"].cast<double>());
+                py::dict portfolio = state["portfolio"].cast<py::dict>();
+                py::dict next_portfolio = next_state["portfolio"].cast<py::dict>();
+                py::dict holdings = portfolio["holdings"].cast<py::dict>();
+                py::dict next_holdings = next_portfolio["holdings"].cast<py::dict>();
+
+                state_cash = portfolio["cash"].cast<double>();
+                next_state_cash = next_portfolio["cash"].cast<double>();
+
+                for (auto item : holdings) {
+                    std::string tic = item.first.cast<std::string>();
+                    tickers.push_back(tic);
+                    py::dict h = item.second.cast<py::dict>();
+                    state_shares.push_back(h["shares"].cast<int>());
+                    state_avg.push_back(h["avg_buy_price"].cast<double>());
+                }
+
+                for (const auto& tic : tickers) {
+                    py::dict h = next_holdings[py::str(tic)].cast<py::dict>();
+                    next_state_shares.push_back(h["shares"].cast<int>());
+                    next_state_avg.push_back(h["avg_buy_price"].cast<double>());
+                }
+            } else {
+                // Vec format
+                state_day = state["day"].cast<int>();
+                next_state_day = next_state["day"].cast<int>();
+                state_cash = state["cash"].cast<double>();
+                next_state_cash = next_state["cash"].cast<double>();
+                tickers = state["tickers"].cast<std::vector<std::string>>();
+
+                auto s_shares = state["shares"].cast<py::array_t<int>>();
+                auto ns_shares = next_state["shares"].cast<py::array_t<int>>();
+                auto s_avg = state["avg_buy_price"].cast<py::array_t<double>>();
+                auto ns_avg = next_state["avg_buy_price"].cast<py::array_t<double>>();
+
+                int n = static_cast<int>(s_shares.size());
+                state_shares.resize(n);
+                next_state_shares.resize(n);
+                state_avg.resize(n);
+                next_state_avg.resize(n);
+
+                std::memcpy(state_shares.data(), s_shares.data(), n * sizeof(int));
+                std::memcpy(next_state_shares.data(), ns_shares.data(), n * sizeof(int));
+                std::memcpy(state_avg.data(), s_avg.data(), n * sizeof(double));
+                std::memcpy(next_state_avg.data(), ns_avg.data(), n * sizeof(double));
             }
 
             // Handle scalar or multi-objective rewards
@@ -614,10 +642,11 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                                state_avg, next_state_avg,
                                action, rewards, done, false);
         }, py::arg("state"), py::arg("action"), py::arg("reward"), py::arg("next_state"), py::arg("done"),
-           "Add transition: (state, action, reward, next_state, done)")
+           "Add transition: (state, action, reward, next_state, done). Auto-detects json/vec format")
         .def("sample_indices", &fast_finrl::ReplayBuffer::sample_indices, py::arg("batch_size"),
              "Sample random indices from buffer")
-        .def("sample", [](const fast_finrl::ReplayBuffer& self, int h, std::optional<size_t> batch_size) -> py::tuple {
+        .def("sample", [](const fast_finrl::ReplayBuffer& self, std::optional<int> h_opt, std::optional<size_t> batch_size) -> py::tuple {
+            int h = h_opt.value_or(0);
             // Returns: (s, a, r, s', s_mask, s'_mask)
             // s/s': dict[ticker] -> ohlcv [batch, h, 5], indicators [batch, h, n_ind] (history only, no current)
             // s_mask/s'_mask: dict[ticker] -> [batch, h] or None if h=0
@@ -792,7 +821,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
-        }, py::arg("h"), py::arg("batch_size") = py::none(),
+        }, py::arg("h") = 0, py::arg("batch_size") = py::none(),
            "Sample batch: returns (s, a, r, s', done, s_mask, s'_mask). s/s' include portfolio. Mask is None if h=0")
         .def("get", &fast_finrl::ReplayBuffer::get, py::arg("index"),
              py::return_value_policy::reference_internal,
@@ -951,7 +980,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
     // Helper: Convert VecFastFinRL::StepResult to batched dict (vec format)
     auto step_result_to_vec = [](const fast_finrl::VecFastFinRL::StepResult& result,
-                                  const std::vector<std::vector<std::string>>& tickers_list) -> py::dict {
+                                  const std::vector<std::vector<std::string>>& tickers_list,
+                                  const std::set<std::string>& indicator_names) -> py::dict {
         const int N = result.num_envs;
         const int n_tic = result.n_tickers;
         const int n_ind = result.n_indicators;
@@ -1038,6 +1068,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         state["n_indicators"] = n_ind;
         state["n_macro"] = n_macro;
 
+        // indicator_names: List[str]
+        py::list ind_names;
+        for (const auto& name : indicator_names) {
+            ind_names.append(py::str(name));
+        }
+        state["indicator_names"] = ind_names;
+
         return state;
     };
 
@@ -1115,7 +1152,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers);
+                return step_result_to_vec(result, tickers, self.get_indicator_names());
             }
             return step_result_to_list(result, tickers);
         }, py::arg("tickers_list"), py::arg("seeds"),
@@ -1135,7 +1172,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers);
+                return step_result_to_vec(result, tickers, self.get_indicator_names());
             }
             return step_result_to_list(result, tickers);
         }, py::arg("tickers_list") = py::none(), py::arg("seed"),
@@ -1148,7 +1185,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers);
+                return step_result_to_vec(result, tickers, self.get_indicator_names());
             }
             return step_result_to_list(result, tickers);
         }, "Reset with no args: keep same tickers, increment seeds.")
@@ -1181,7 +1218,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers);
+                return step_result_to_vec(result, tickers, self.get_indicator_names());
             }
             return step_result_to_list(result, tickers);
         }, py::arg("actions"),
@@ -1200,7 +1237,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const auto& tickers = self.get_tickers();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers);
+                return step_result_to_vec(result, tickers, self.get_indicator_names());
             }
             return step_result_to_list(result, tickers);
         }, py::arg("indices"), py::arg("seeds"),
@@ -1302,6 +1339,24 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }, py::arg("ticker_list"), py::arg("day"), py::arg("h"), py::arg("future"),
            "Get market window data (delegates to base environment)");
 
+    // VecStoredTransition binding
+    py::class_<fast_finrl::VecStoredTransition>(m, "VecStoredTransition")
+        .def(py::init<>())
+        .def_readwrite("env_id", &fast_finrl::VecStoredTransition::env_id)
+        .def_readwrite("state_day", &fast_finrl::VecStoredTransition::state_day)
+        .def_readwrite("tickers", &fast_finrl::VecStoredTransition::tickers)
+        .def_readwrite("state_cash", &fast_finrl::VecStoredTransition::state_cash)
+        .def_readwrite("state_shares", &fast_finrl::VecStoredTransition::state_shares)
+        .def_readwrite("state_avg_buy_price", &fast_finrl::VecStoredTransition::state_avg_buy_price)
+        .def_readwrite("action", &fast_finrl::VecStoredTransition::action)
+        .def_readwrite("rewards", &fast_finrl::VecStoredTransition::rewards)
+        .def_readwrite("done", &fast_finrl::VecStoredTransition::done)
+        .def_readwrite("terminal", &fast_finrl::VecStoredTransition::terminal)
+        .def_readwrite("next_state_day", &fast_finrl::VecStoredTransition::next_state_day)
+        .def_readwrite("next_state_cash", &fast_finrl::VecStoredTransition::next_state_cash)
+        .def_readwrite("next_state_shares", &fast_finrl::VecStoredTransition::next_state_shares)
+        .def_readwrite("next_state_avg_buy_price", &fast_finrl::VecStoredTransition::next_state_avg_buy_price);
+
     // VecReplayBuffer - Vectorized replay buffer for N environments
     py::class_<fast_finrl::VecReplayBuffer>(m, "VecReplayBuffer")
         // Constructor from FastFinRL
@@ -1357,90 +1412,187 @@ PYBIND11_MODULE(fast_finrl_py, m) {
            py::arg("action"), py::arg("rewards"), py::arg("done"), py::arg("terminal"),
            "Add single transition (for testing/compatibility)")
 
-        // add - primary interface for VecFastFinRL
+        // add - unified interface that auto-detects format (dict=vec format, list=object list)
         .def("add", [](fast_finrl::VecReplayBuffer& self,
-                             const py::list& states,
-                             py::array_t<double, py::array::c_style> actions_arr,
-                             const py::list& rewards_list,
-                             const py::list& next_states,
-                             const py::list& dones_list) {
-            int num_envs = static_cast<int>(py::len(states));
-            if (num_envs == 0) return;
+                       py::object states_obj,
+                       py::array_t<double, py::array::c_style> actions_arr,
+                       py::object rewards_obj,
+                       py::object next_states_obj,
+                       py::object dones_obj) {
 
             auto actions_buf = actions_arr.request();
             const double* actions = static_cast<const double*>(actions_buf.ptr);
             int n_tickers = static_cast<int>(actions_buf.shape[1]);
 
-            // Extract from states
-            std::vector<int> env_ids(num_envs);
-            std::vector<int> state_days(num_envs);
-            std::vector<int> next_state_days(num_envs);
-            std::vector<std::vector<std::string>> tickers_list(num_envs);
-            std::vector<double> state_cash(num_envs);
-            std::vector<double> next_state_cash(num_envs);
-            std::vector<int> state_shares_flat(num_envs * n_tickers);
-            std::vector<int> next_state_shares_flat(num_envs * n_tickers);
-            std::vector<double> state_avg_flat(num_envs * n_tickers);
-            std::vector<double> next_state_avg_flat(num_envs * n_tickers);
-            std::vector<std::vector<double>> rewards(num_envs);
-            std::vector<bool> dones(num_envs);
-            std::vector<bool> terminals(num_envs);
+            // Auto-detect format: dict = vec format, list = object list format
+            if (py::isinstance<py::dict>(states_obj)) {
+                // Vec format: batched dicts from VecFastFinRL return_format='vec'
+                py::dict state_dict = states_obj.cast<py::dict>();
+                py::dict next_state_dict = next_states_obj.cast<py::dict>();
 
-            for (int i = 0; i < num_envs; ++i) {
-                py::object s = states[i];
-                py::object ns = next_states[i];
+                auto day_arr = state_dict["day"].cast<py::array_t<int>>();
+                auto cash_arr = state_dict["cash"].cast<py::array_t<double>>();
+                auto shares_arr = state_dict["shares"].cast<py::array_t<int>>();
+                auto avg_arr = state_dict["avg_buy_price"].cast<py::array_t<double>>();
+                auto tickers_list = state_dict["tickers"].cast<std::vector<std::vector<std::string>>>();
 
-                env_ids[i] = i;  // Default env_id = index
-                state_days[i] = s.attr("day").cast<int>();
-                next_state_days[i] = ns.attr("day").cast<int>();
-                tickers_list[i] = s.attr("tickers").cast<std::vector<std::string>>();
-                state_cash[i] = s.attr("cash").cast<double>();
-                next_state_cash[i] = ns.attr("cash").cast<double>();
+                auto next_day_arr = next_state_dict["day"].cast<py::array_t<int>>();
+                auto next_cash_arr = next_state_dict["cash"].cast<py::array_t<double>>();
+                auto next_shares_arr = next_state_dict["shares"].cast<py::array_t<int>>();
+                auto next_avg_arr = next_state_dict["avg_buy_price"].cast<py::array_t<double>>();
+                auto next_terminal_arr = next_state_dict["terminal"].cast<py::array_t<bool>>();
 
-                // shares
-                auto s_shares = s.attr("shares").cast<py::array_t<int>>();
-                auto ns_shares = ns.attr("shares").cast<py::array_t<int>>();
-                auto s_shares_ptr = s_shares.data();
-                auto ns_shares_ptr = ns_shares.data();
+                int num_envs = static_cast<int>(day_arr.size());
+                if (num_envs == 0) return;
 
-                // avg_buy_price
-                auto s_avg = s.attr("avg_buy_price").cast<py::array_t<double>>();
-                auto ns_avg = ns.attr("avg_buy_price").cast<py::array_t<double>>();
-                auto s_avg_ptr = s_avg.data();
-                auto ns_avg_ptr = ns_avg.data();
+                std::vector<int> env_ids(num_envs);
+                std::vector<int> state_days(num_envs);
+                std::vector<int> next_state_days(num_envs);
+                std::vector<double> state_cash(num_envs);
+                std::vector<double> next_state_cash(num_envs);
+                std::vector<std::vector<double>> rewards(num_envs);
+                std::vector<bool> dones(num_envs);
+                std::vector<bool> terminals(num_envs);
 
-                for (int j = 0; j < n_tickers; ++j) {
-                    state_shares_flat[i * n_tickers + j] = s_shares_ptr[j];
-                    next_state_shares_flat[i * n_tickers + j] = ns_shares_ptr[j];
-                    state_avg_flat[i * n_tickers + j] = s_avg_ptr[j];
-                    next_state_avg_flat[i * n_tickers + j] = ns_avg_ptr[j];
-                }
+                const int* day_ptr = day_arr.data();
+                const double* cash_ptr = cash_arr.data();
+                const int* next_day_ptr = next_day_arr.data();
+                const double* next_cash_ptr = next_cash_arr.data();
+                const bool* terminal_ptr = next_terminal_arr.data();
 
-                // Rewards - handle scalar or list
-                py::object r = rewards_list[i];
-                if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
-                    rewards[i] = r.cast<std::vector<double>>();
+                // Handle rewards: array or list
+                std::vector<double> rewards_flat;
+                if (py::isinstance<py::array>(rewards_obj)) {
+                    auto rewards_arr = rewards_obj.cast<py::array_t<double>>();
+                    const double* rewards_ptr = rewards_arr.data();
+                    for (int i = 0; i < num_envs; ++i) {
+                        rewards[i] = {rewards_ptr[i]};
+                    }
                 } else {
-                    rewards[i] = {r.cast<double>()};
+                    py::list rewards_list = rewards_obj.cast<py::list>();
+                    for (int i = 0; i < num_envs; ++i) {
+                        py::object r = rewards_list[i];
+                        if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
+                            rewards[i] = r.cast<std::vector<double>>();
+                        } else {
+                            rewards[i] = {r.cast<double>()};
+                        }
+                    }
                 }
 
-                dones[i] = dones_list[i].cast<bool>();
-                terminals[i] = ns.attr("terminal").cast<bool>();
-            }
+                // Handle dones: array or list
+                if (py::isinstance<py::array>(dones_obj)) {
+                    auto dones_arr = dones_obj.cast<py::array_t<bool>>();
+                    const bool* dones_ptr = dones_arr.data();
+                    for (int i = 0; i < num_envs; ++i) {
+                        dones[i] = dones_ptr[i];
+                    }
+                } else {
+                    py::list dones_list = dones_obj.cast<py::list>();
+                    for (int i = 0; i < num_envs; ++i) {
+                        dones[i] = dones_list[i].cast<bool>();
+                    }
+                }
 
-            self.add_batch(
-                num_envs, env_ids, state_days, next_state_days, tickers_list,
-                state_cash, next_state_cash,
-                state_shares_flat.data(), next_state_shares_flat.data(),
-                state_avg_flat.data(), next_state_avg_flat.data(),
-                actions, rewards, dones, terminals, n_tickers
-            );
+                for (int i = 0; i < num_envs; ++i) {
+                    env_ids[i] = i;
+                    state_days[i] = day_ptr[i];
+                    next_state_days[i] = next_day_ptr[i];
+                    state_cash[i] = cash_ptr[i];
+                    next_state_cash[i] = next_cash_ptr[i];
+                    terminals[i] = terminal_ptr[i];
+                }
+
+                const int* state_shares_ptr = shares_arr.data();
+                const int* next_state_shares_ptr = next_shares_arr.data();
+                const double* state_avg_ptr = avg_arr.data();
+                const double* next_state_avg_ptr = next_avg_arr.data();
+
+                self.add_batch(
+                    num_envs, env_ids, state_days, next_state_days, tickers_list,
+                    state_cash, next_state_cash,
+                    state_shares_ptr, next_state_shares_ptr,
+                    state_avg_ptr, next_state_avg_ptr,
+                    actions, rewards, dones, terminals, n_tickers
+                );
+            } else {
+                // List format: list of state objects
+                py::list states = states_obj.cast<py::list>();
+                py::list next_states = next_states_obj.cast<py::list>();
+                py::list rewards_list = rewards_obj.cast<py::list>();
+                py::list dones_list = dones_obj.cast<py::list>();
+
+                int num_envs = static_cast<int>(py::len(states));
+                if (num_envs == 0) return;
+
+                std::vector<int> env_ids(num_envs);
+                std::vector<int> state_days(num_envs);
+                std::vector<int> next_state_days(num_envs);
+                std::vector<std::vector<std::string>> tickers_list(num_envs);
+                std::vector<double> state_cash(num_envs);
+                std::vector<double> next_state_cash(num_envs);
+                std::vector<int> state_shares_flat(num_envs * n_tickers);
+                std::vector<int> next_state_shares_flat(num_envs * n_tickers);
+                std::vector<double> state_avg_flat(num_envs * n_tickers);
+                std::vector<double> next_state_avg_flat(num_envs * n_tickers);
+                std::vector<std::vector<double>> rewards(num_envs);
+                std::vector<bool> dones(num_envs);
+                std::vector<bool> terminals(num_envs);
+
+                for (int i = 0; i < num_envs; ++i) {
+                    py::object s = states[i];
+                    py::object ns = next_states[i];
+
+                    env_ids[i] = i;
+                    state_days[i] = s.attr("day").cast<int>();
+                    next_state_days[i] = ns.attr("day").cast<int>();
+                    tickers_list[i] = s.attr("tickers").cast<std::vector<std::string>>();
+                    state_cash[i] = s.attr("cash").cast<double>();
+                    next_state_cash[i] = ns.attr("cash").cast<double>();
+
+                    auto s_shares = s.attr("shares").cast<py::array_t<int>>();
+                    auto ns_shares = ns.attr("shares").cast<py::array_t<int>>();
+                    auto s_shares_ptr = s_shares.data();
+                    auto ns_shares_ptr = ns_shares.data();
+
+                    auto s_avg = s.attr("avg_buy_price").cast<py::array_t<double>>();
+                    auto ns_avg = ns.attr("avg_buy_price").cast<py::array_t<double>>();
+                    auto s_avg_ptr = s_avg.data();
+                    auto ns_avg_ptr = ns_avg.data();
+
+                    for (int j = 0; j < n_tickers; ++j) {
+                        state_shares_flat[i * n_tickers + j] = s_shares_ptr[j];
+                        next_state_shares_flat[i * n_tickers + j] = ns_shares_ptr[j];
+                        state_avg_flat[i * n_tickers + j] = s_avg_ptr[j];
+                        next_state_avg_flat[i * n_tickers + j] = ns_avg_ptr[j];
+                    }
+
+                    py::object r = rewards_list[i];
+                    if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
+                        rewards[i] = r.cast<std::vector<double>>();
+                    } else {
+                        rewards[i] = {r.cast<double>()};
+                    }
+
+                    dones[i] = dones_list[i].cast<bool>();
+                    terminals[i] = ns.attr("terminal").cast<bool>();
+                }
+
+                self.add_batch(
+                    num_envs, env_ids, state_days, next_state_days, tickers_list,
+                    state_cash, next_state_cash,
+                    state_shares_flat.data(), next_state_shares_flat.data(),
+                    state_avg_flat.data(), next_state_avg_flat.data(),
+                    actions, rewards, dones, terminals, n_tickers
+                );
+            }
         }, py::arg("states"), py::arg("actions"), py::arg("rewards"),
            py::arg("next_states"), py::arg("dones"),
-           "Add batch of N transitions from VecFastFinRL")
+           "Add batch of transitions. Auto-detects format: dict=vec format, list=object list")
 
         // sample - same interface as ReplayBuffer
-        .def("sample", [](const fast_finrl::VecReplayBuffer& self, int h, std::optional<size_t> batch_size) -> py::tuple {
+        .def("sample", [](const fast_finrl::VecReplayBuffer& self, std::optional<int> h_opt, std::optional<size_t> batch_size) -> py::tuple {
+            int h = h_opt.value_or(0);
             using Batch = fast_finrl::VecReplayBuffer::SampleBatch;
             std::shared_ptr<Batch> holder = std::make_shared<Batch>(
                 batch_size ? self.sample(h, *batch_size) : self.sample(h)
@@ -1613,9 +1765,87 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
-        }, py::arg("h"), py::arg("batch_size") = py::none(),
+        }, py::arg("h") = 0, py::arg("batch_size") = py::none(),
            "Sample batch with env_ids. Returns (s, a, r, s', done, s_mask, s'_mask)")
 
+        .def("sample_indices", &fast_finrl::VecReplayBuffer::sample_indices, py::arg("batch_size"),
+             "Sample random indices from buffer")
+        .def("get", &fast_finrl::VecReplayBuffer::get, py::arg("index"),
+             py::return_value_policy::reference_internal,
+             "Get transition by index")
+        .def("get_market_data", [](const fast_finrl::VecReplayBuffer& self,
+                                   size_t index, int h, int future, bool next_state) -> py::dict {
+            using DataHolder = fast_finrl::FastFinRL::MultiTickerWindowData;
+            std::shared_ptr<DataHolder> holder = std::make_shared<DataHolder>(
+                self.get_market_data(index, h, future, next_state)
+            );
+
+            int n_ind = holder->n_indicators;
+            py::dict result;
+
+            for (auto& [ticker, td] : holder->tickers) {
+                py::dict ticker_dict;
+
+                auto make_capsule = [holder]() {
+                    return py::capsule(new std::shared_ptr<DataHolder>(holder),
+                        [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
+                };
+
+                ticker_dict["past_ohlcv"] = py::array_t<double>(
+                    {h, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.past_ohlcv.data(), make_capsule());
+
+                ticker_dict["past_indicators"] = py::array_t<double>(
+                    {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
+                    td.past_indicators.data(), make_capsule());
+
+                ticker_dict["past_mask"] = py::array_t<int>(
+                    {h}, {sizeof(int)},
+                    td.past_mask.data(), make_capsule());
+
+                ticker_dict["past_days"] = py::array_t<int>(
+                    {h}, {sizeof(int)},
+                    td.past_days.data(), make_capsule());
+
+                ticker_dict["current_open"] = td.current_open;
+
+                ticker_dict["current_indicators"] = py::array_t<double>(
+                    {n_ind}, {sizeof(double)},
+                    td.current_indicators.data(), make_capsule());
+
+                ticker_dict["current_mask"] = td.current_mask;
+                ticker_dict["current_day"] = td.current_day;
+
+                ticker_dict["future_ohlcv"] = py::array_t<double>(
+                    {future, 5}, {5 * sizeof(double), sizeof(double)},
+                    td.future_ohlcv.data(), make_capsule());
+
+                ticker_dict["future_indicators"] = py::array_t<double>(
+                    {future, n_ind}, {n_ind * sizeof(double), sizeof(double)},
+                    td.future_indicators.data(), make_capsule());
+
+                ticker_dict["future_mask"] = py::array_t<int>(
+                    {future}, {sizeof(int)},
+                    td.future_mask.data(), make_capsule());
+
+                ticker_dict["future_days"] = py::array_t<int>(
+                    {future}, {sizeof(int)},
+                    td.future_days.data(), make_capsule());
+
+                result[py::str(ticker)] = ticker_dict;
+            }
+
+            py::list names;
+            for (const std::string& name : holder->indicator_names) {
+                names.append(py::str(name));
+            }
+            result["indicator_names"] = names;
+            result["h"] = h;
+            result["future"] = future;
+
+            return result;
+        }, py::arg("index"), py::arg("h"), py::arg("future"), py::arg("next_state") = false,
+           "Get market data for transition (zero-copy numpy arrays)")
         .def("size", &fast_finrl::VecReplayBuffer::size, "Current buffer size")
         .def("capacity", &fast_finrl::VecReplayBuffer::capacity, "Buffer capacity")
         .def("clear", &fast_finrl::VecReplayBuffer::clear, "Clear buffer")
