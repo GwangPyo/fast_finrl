@@ -40,14 +40,17 @@ public:
     using MultiTickerWindowData = FastFinRL::MultiTickerWindowData;
 
     // Constructor - env is used for market data lookup
+    // seed: -1 for random_device, >= 0 for reproducible sampling
     explicit VecReplayBuffer(std::shared_ptr<const FastFinRL> env,
                              size_t capacity = 1000000,
-                             size_t batch_size = 256);
+                             size_t batch_size = 256,
+                             int64_t seed = -1);
 
     // Constructor from VecFastFinRL (uses internal base_env)
     explicit VecReplayBuffer(const VecFastFinRL& vec_env,
                              size_t capacity = 1000000,
-                             size_t batch_size = 256);
+                             size_t batch_size = 256,
+                             int64_t seed = -1);
 
     // Add single transition
     void add(const VecStoredTransition& transition);

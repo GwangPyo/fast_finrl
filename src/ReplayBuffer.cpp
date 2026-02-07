@@ -9,11 +9,11 @@
 
 namespace fast_finrl {
 
-ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size)
+ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed)
     : env_(std::move(env))
     , capacity_(capacity)
     , batch_size_(batch_size)
-    , rng_(std::random_device{}())
+    , rng_(seed >= 0 ? static_cast<unsigned int>(seed) : std::random_device{}())
 {
     // Reserve up to 1M, larger buffers grow dynamically
     buffer_.reserve(std::min(capacity_, size_t(1000000)));

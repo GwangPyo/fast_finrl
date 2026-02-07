@@ -67,7 +67,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          int64_t initial_seed,
                          const std::vector<std::string>& tech_indicator_list,
                          const std::vector<std::string>& macro_tickers,
-                         const std::string& return_format) {
+                         const std::string& return_format,
+                         int num_tickers,
+                         bool shuffle_tickers) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
             config.hmax = hmax;
@@ -80,6 +82,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.tech_indicator_list = tech_indicator_list;
             config.macro_tickers = macro_tickers;
             config.return_format = parse_return_format(return_format);
+            config.num_tickers = num_tickers;
+            config.shuffle_tickers = shuffle_tickers;
             return std::make_unique<fast_finrl::FastFinRL>(csv_path, config);
         }),
              py::arg("csv_path"),
@@ -94,6 +98,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("tech_indicator_list") = std::vector<std::string>{},
              py::arg("macro_tickers") = std::vector<std::string>{},
              py::arg("return_format") = "json",
+             py::arg("num_tickers") = 0,
+             py::arg("shuffle_tickers") = false,
              "Create FastFinRL environment with keyword arguments")
 
         // Public attributes (read-write)
@@ -476,11 +482,11 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
     // ReplayBuffer binding
     py::class_<fast_finrl::ReplayBuffer>(m, "ReplayBuffer")
-        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size) {
+        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
             return std::make_unique<fast_finrl::ReplayBuffer>(
-                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size);
-        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
-           "Create ReplayBuffer. capacity: 100K (small), 1M (default), 5M (large)")
+                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
+           "Create ReplayBuffer. capacity: 100K (small), 1M (default), 5M (large). seed: -1 for random, >= 0 for reproducible")
         .def("add", [](fast_finrl::ReplayBuffer& self,
                        const py::dict& state,
                        const std::vector<double>& action,
@@ -969,7 +975,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          const std::vector<std::string>& tech_indicator_list,
                          const std::vector<std::string>& macro_tickers,
                          bool auto_reset,
-                         const std::string& return_format) {
+                         const std::string& return_format,
+                         int num_tickers,
+                         bool shuffle_tickers) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
             config.hmax = hmax;
@@ -981,6 +989,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.tech_indicator_list = tech_indicator_list;
             config.macro_tickers = macro_tickers;
             config.return_format = parse_return_format(return_format);
+            config.num_tickers = num_tickers;
+            config.shuffle_tickers = shuffle_tickers;
             return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, config);
         }),
              py::arg("csv_path"),
@@ -995,6 +1005,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("macro_tickers") = std::vector<std::string>{},
              py::arg("auto_reset") = true,
              py::arg("return_format") = "json",
+             py::arg("num_tickers") = 0,
+             py::arg("shuffle_tickers") = false,
              "Create VecFastFinRL - vectorized environment managing N parallel environments")
 
         // Return format control
@@ -1161,17 +1173,57 @@ PYBIND11_MODULE(fast_finrl_py, m) {
     // VecReplayBuffer - Vectorized replay buffer for N environments
     py::class_<fast_finrl::VecReplayBuffer>(m, "VecReplayBuffer")
         // Constructor from FastFinRL
-        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size) {
+        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
             return std::make_unique<fast_finrl::VecReplayBuffer>(
-                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size);
-        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
-           "Create VecReplayBuffer from FastFinRL instance")
+                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
+        }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
+           "Create VecReplayBuffer from FastFinRL instance. seed: -1 for random, >= 0 for reproducible")
 
         // Constructor from VecFastFinRL
-        .def(py::init([](fast_finrl::VecFastFinRL& vec_env, size_t capacity, size_t batch_size) {
-            return std::make_unique<fast_finrl::VecReplayBuffer>(vec_env, capacity, batch_size);
-        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256,
-           "Create VecReplayBuffer from VecFastFinRL instance")
+        .def(py::init([](fast_finrl::VecFastFinRL& vec_env, size_t capacity, size_t batch_size, int64_t seed) {
+            return std::make_unique<fast_finrl::VecReplayBuffer>(vec_env, capacity, batch_size, seed);
+        }), py::arg("vec_env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = -1,
+           "Create VecReplayBuffer from VecFastFinRL instance. seed: -1 for random, >= 0 for reproducible")
+
+        // add_transition - add single transition (for testing)
+        .def("add_transition", [](fast_finrl::VecReplayBuffer& self,
+                                  int env_id,
+                                  int state_day, int next_state_day,
+                                  const std::vector<std::string>& tickers,
+                                  double state_cash, double next_state_cash,
+                                  const std::vector<int>& state_shares,
+                                  const std::vector<int>& next_state_shares,
+                                  const std::vector<double>& state_avg_buy_price,
+                                  const std::vector<double>& next_state_avg_buy_price,
+                                  const std::vector<double>& action,
+                                  py::object reward,
+                                  bool done, bool terminal) {
+            fast_finrl::VecStoredTransition t;
+            t.env_id = env_id;
+            t.state_day = state_day;
+            t.next_state_day = next_state_day;
+            t.tickers = tickers;
+            t.state_cash = state_cash;
+            t.next_state_cash = next_state_cash;
+            t.state_shares = state_shares;
+            t.next_state_shares = next_state_shares;
+            t.state_avg_buy_price = state_avg_buy_price;
+            t.next_state_avg_buy_price = next_state_avg_buy_price;
+            t.action = action;
+            if (py::isinstance<py::list>(reward) || py::isinstance<py::array>(reward)) {
+                t.rewards = reward.cast<std::vector<double>>();
+            } else {
+                t.rewards = {reward.cast<double>()};
+            }
+            t.done = done;
+            t.terminal = terminal;
+            self.add(t);
+        }, py::arg("env_id"), py::arg("state_day"), py::arg("next_state_day"),
+           py::arg("tickers"), py::arg("state_cash"), py::arg("next_state_cash"),
+           py::arg("state_shares"), py::arg("next_state_shares"),
+           py::arg("state_avg_buy_price"), py::arg("next_state_avg_buy_price"),
+           py::arg("action"), py::arg("rewards"), py::arg("done"), py::arg("terminal"),
+           "Add single transition (for testing/compatibility)")
 
         // add - primary interface for VecFastFinRL
         .def("add", [](fast_finrl::VecReplayBuffer& self,

@@ -20,6 +20,8 @@ FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     , rng_(config.initial_seed)
     , tech_indicator_list_(config.tech_indicator_list)
     , macro_tickers_(config.macro_tickers)
+    , num_tickers_(config.num_tickers)
+    , shuffle_tickers_(config.shuffle_tickers)
     , state_serializer_(make_unique<JsonStateSerializer>())
 {
     excluded_columns_ = {"day", "day_idx", "date", "tic", "open", "high", "low", "close", "volume", "start"};
@@ -310,8 +312,26 @@ nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed,
     }
     rng_.seed(current_seed_);
 
-    // 2. Setup tickers
-    setup_tickers(ticker_list);
+    // 2. Determine effective tickers (with optional shuffle)
+    vector<string> effective_tickers = ticker_list;
+
+    if (shuffle_tickers_ && num_tickers_ > 0) {
+        // Get all available tickers
+        vector<string> all_tics(all_tickers_.begin(), all_tickers_.end());
+
+        // Shuffle using RNG
+        shuffle(all_tics.begin(), all_tics.end(), rng_);
+
+        // Take first num_tickers
+        int n = min(num_tickers_, static_cast<int>(all_tics.size()));
+        effective_tickers = vector<string>(all_tics.begin(), all_tics.begin() + n);
+
+        // Sort for consistency
+        sort(effective_tickers.begin(), effective_tickers.end());
+    }
+
+    // 3. Setup tickers
+    setup_tickers(effective_tickers);
 
     // 3. Random day selection [min_start_day + shifted_start, max_day * 0.8)
     // min_start_day = max of first available day among active tickers + macro tickers

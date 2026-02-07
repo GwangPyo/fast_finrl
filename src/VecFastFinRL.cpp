@@ -33,17 +33,42 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
         throw runtime_error("tickers_list cannot be empty");
     }
 
-    n_tickers_ = static_cast<int>(tickers_list[0].size());
+    // Handle shuffle_tickers: if enabled and tickers_list[i] is empty, generate random tickers
+    vector<vector<string>> effective_tickers_list = tickers_list;
+
+    if (config_.shuffle_tickers && config_.num_tickers > 0) {
+        const auto& all_tickers_set = base_env_->get_all_tickers();
+        vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
+
+        for (int i = 0; i < num_envs_; ++i) {
+            if (tickers_list[i].empty()) {
+                // Create per-env RNG with seed
+                mt19937 rng(static_cast<unsigned int>(seeds[i]));
+
+                // Shuffle and select num_tickers
+                shuffle(all_tics.begin(), all_tics.end(), rng);
+                int n = min(config_.num_tickers, static_cast<int>(all_tics.size()));
+                vector<string> selected(all_tics.begin(), all_tics.begin() + n);
+
+                // Sort for consistency
+                sort(selected.begin(), selected.end());
+                effective_tickers_list[i] = selected;
+            }
+        }
+    }
+
+    // Now determine n_tickers from effective list
+    n_tickers_ = static_cast<int>(effective_tickers_list[0].size());
 
     // Validate: all envs must have same number of tickers
-    for (const auto& tickers : tickers_list) {
+    for (const auto& tickers : effective_tickers_list) {
         if (static_cast<int>(tickers.size()) != n_tickers_) {
             throw runtime_error("All envs must have same number of tickers");
         }
     }
 
     // Store per-env tickers
-    tickers_ = tickers_list;
+    tickers_ = effective_tickers_list;
 
     // Build ticker index lookup and first_day for each env's tickers
     const auto& all_tickers = base_env_->get_all_tickers();
@@ -52,7 +77,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 
     for (int i = 0; i < num_envs_; ++i) {
         for (int t = 0; t < n_tickers_; ++t) {
-            const string& tic = tickers_list[i][t];
+            const string& tic = tickers_[i][t];
             if (all_tickers.find(tic) == all_tickers.end()) {
                 throw runtime_error("Ticker not found: " + tic);
             }

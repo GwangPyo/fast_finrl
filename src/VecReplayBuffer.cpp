@@ -9,11 +9,11 @@
 
 namespace fast_finrl {
 
-VecReplayBuffer::VecReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size)
+VecReplayBuffer::VecReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed)
     : env_(std::move(env))
     , capacity_(capacity)
     , batch_size_(batch_size)
-    , rng_(std::random_device{}())
+    , rng_(seed >= 0 ? static_cast<unsigned int>(seed) : std::random_device{}())
 {
     buffer_.reserve(std::min(capacity_, size_t(1000000)));
 
@@ -26,8 +26,8 @@ VecReplayBuffer::VecReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t ca
     n_macro_tickers_ = static_cast<int>(cached_macro_tickers_.size());
 }
 
-VecReplayBuffer::VecReplayBuffer(const VecFastFinRL& vec_env, size_t capacity, size_t batch_size)
-    : VecReplayBuffer(vec_env.get_base_env(), capacity, batch_size)
+VecReplayBuffer::VecReplayBuffer(const VecFastFinRL& vec_env, size_t capacity, size_t batch_size, int64_t seed)
+    : VecReplayBuffer(vec_env.get_base_env(), capacity, batch_size, seed)
 {}
 
 void VecReplayBuffer::add(const VecStoredTransition& transition) {

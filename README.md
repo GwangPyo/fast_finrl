@@ -59,7 +59,9 @@ FastFinRL(
     initial_seed: int = 0,
     tech_indicator_list: List[str] = [],
     macro_tickers: List[str] = [],
-    return_format: str = "json"
+    return_format: str = "json",
+    num_tickers: int = 0,
+    shuffle_tickers: bool = False
 )
 ```
 
@@ -77,6 +79,8 @@ FastFinRL(
 | `tech_indicator_list` | List[str] | [] | Indicator columns to use. Empty = auto-detect all non-OHLC numeric columns |
 | `macro_tickers` | List[str] | [] | Tickers always included in state["macro"] regardless of trading tickers |
 | `return_format` | str | "json" | State format: "json" (nested dict) or "vec" (flat numpy arrays) |
+| `num_tickers` | int | 0 | Number of tickers for shuffle mode. 0 = use all provided tickers |
+| `shuffle_tickers` | bool | False | When True, reset() randomly selects num_tickers from all available tickers |
 
 **Bidding policies:**
 
@@ -96,15 +100,20 @@ Initialize episode with specified tickers.
 
 ```python
 state = env.reset(["AAPL", "GOOGL"], seed=42, shifted_start=100)
+
+# With shuffle_tickers enabled (constructor: num_tickers=5, shuffle_tickers=True):
+state = env.reset([], seed=42)  # Randomly selects 5 tickers, sorted alphabetically
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `ticker_list` | List[str] | Tickers to trade. **Order determines action order in step()** |
-| `seed` | int | Random seed. Use -1 for auto-increment (previous seed + 1) |
+| `ticker_list` | List[str] | Tickers to trade. **Order determines action order in step()**. Pass empty list `[]` when using shuffle_tickers mode |
+| `seed` | int | Random seed. Use -1 for auto-increment (previous seed + 1). Also controls shuffle if enabled |
 | `shifted_start` | int | Skip first N days before starting |
 
 **Returns:** State dict (format depends on `return_format`)
+
+**Shuffle mode:** When `shuffle_tickers=True` and `ticker_list` is empty, the environment randomly selects `num_tickers` from all available tickers. Selected tickers are sorted alphabetically for consistency. Same seed produces same ticker selection.
 
 ---
 
@@ -300,7 +309,8 @@ env = FastFinRL("data/stock.csv")
 buffer = ReplayBuffer(
     env: FastFinRL,
     capacity: int = 1_000_000,
-    batch_size: int = 256
+    batch_size: int = 256,
+    seed: int = -1
 )
 ```
 
@@ -309,6 +319,7 @@ buffer = ReplayBuffer(
 | `env` | FastFinRL | required | Environment instance (used for market data lookup) |
 | `capacity` | int | 1,000,000 | Maximum transitions to store |
 | `batch_size` | int | 256 | Default batch size for sample() |
+| `seed` | int | -1 | Random seed for sampling. -1 = random_device (non-deterministic). ≥0 = reproducible sampling |
 
 ---
 
@@ -450,13 +461,17 @@ N parallel environments with TBB parallelization. **Inherits all FastFinRL featu
 VecFastFinRL(
     ...,                        # Same as FastFinRL
     auto_reset: bool = True,    # NEW: Auto-reset done envs with seed+1
-    return_format: str = "json" # "json" returns List[dict], "vec" returns single dict
+    return_format: str = "json",# "json" returns List[dict], "vec" returns single dict
+    num_tickers: int = 0,       # Number of tickers for shuffle mode
+    shuffle_tickers: bool = False  # Random ticker selection per env
 )
 ```
 
 | New Parameter | Type | Default | Description |
 |---------------|------|---------|-------------|
 | `auto_reset` | bool | True | When env is done, automatically reset with seed+1 |
+| `num_tickers` | int | 0 | Number of tickers for shuffle mode. 0 = use all provided tickers |
+| `shuffle_tickers` | bool | False | When True, reset() randomly selects num_tickers per env. Each env can have different tickers |
 
 **Note:** `initial_seed` parameter is NOT available. Seeds are provided per-env in reset().
 
@@ -470,16 +485,23 @@ VecFastFinRL(
 tickers_list = [["AAPL", "GOOGL"], ["MSFT", "AAPL"]]  # N=2 envs
 seeds = np.arange(2, dtype=np.int64)
 states = vec_env.reset(tickers_list, seeds)
+
+# With shuffle_tickers enabled:
+vec_env = VecFastFinRL("data.csv", num_tickers=3, shuffle_tickers=True)
+states = vec_env.reset([[], [], []], seeds=np.array([1, 2, 3]))
+# Each env randomly selects 3 tickers (different per seed)
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `tickers_list` | List[List[str]] | Shape (N, n_tickers). All envs must have same n_tickers |
-| `seeds` | np.ndarray[int64] | Shape (N,). Per-env random seeds |
+| `tickers_list` | List[List[str]] | Shape (N, n_tickers). Pass empty lists `[[],[],...]` for shuffle mode |
+| `seeds` | np.ndarray[int64] | Shape (N,). Per-env random seeds (also controls shuffle) |
 
 **Returns:**
 - `return_format="json"`: `List[dict]` of length N
 - `return_format="vec"`: Single `dict` with batched arrays
+
+**Shuffle mode:** When `shuffle_tickers=True` and env's ticker list is empty, each env independently selects `num_tickers` random tickers. Different seeds produce different selections. Selected tickers are sorted alphabetically.
 
 ---
 
@@ -605,11 +627,18 @@ Replay buffer for vectorized environments. **Inherits all ReplayBuffer features*
 
 ```python
 # From VecFastFinRL (recommended)
-buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256)
+buffer = VecReplayBuffer(vec_env, capacity=1_000_000, batch_size=256, seed=-1)
 
 # From FastFinRL (also works)
-buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256)
+buffer = VecReplayBuffer(env, capacity=1_000_000, batch_size=256, seed=-1)
 ```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `env` / `vec_env` | FastFinRL or VecFastFinRL | required | Environment instance |
+| `capacity` | int | 1,000,000 | Maximum transitions to store |
+| `batch_size` | int | 256 | Default batch size for sample() |
+| `seed` | int | -1 | Random seed for sampling. -1 = random_device (non-deterministic). ≥0 = reproducible sampling |
 
 ---
 
@@ -681,7 +710,7 @@ day,date,tic,open,high,low,close,volume,macd,rsi_14
 from fast_finrl_py import FastFinRL, ReplayBuffer
 
 env = FastFinRL("train.csv", initial_amount=100000, hmax=30)
-buffer = ReplayBuffer(env, capacity=1_000_000, batch_size=256)
+buffer = ReplayBuffer(env, capacity=1_000_000, batch_size=256, seed=42)  # Reproducible sampling
 tickers = ["AAPL", "GOOGL", "MSFT"]
 
 for episode in range(100):
@@ -695,6 +724,26 @@ for episode in range(100):
 for step in range(10000):
     s, a, r, s_next, done, s_mask, _ = buffer.sample(h=50)
     loss = model.train(s, a, r, s_next, done)
+```
+
+## Shuffle Tickers Example
+
+```python
+# Randomly sample 5 tickers each episode
+env = FastFinRL("train.csv", num_tickers=5, shuffle_tickers=True)
+buffer = ReplayBuffer(env, capacity=1_000_000)
+
+for episode in range(100):
+    # Pass empty list - tickers are randomly selected based on seed
+    state = env.reset([], seed=episode)
+    tickers = list(state["market"].keys())  # Get selected tickers
+    print(f"Episode {episode}: {tickers}")  # Different each episode
+
+    while not state["done"]:
+        action = model.predict(state)
+        next_state = env.step(action)
+        buffer.add(state, action, next_state["reward"], next_state, next_state["done"])
+        state = next_state
 ```
 
 ## VecFastFinRL Training Loop
