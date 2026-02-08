@@ -1917,10 +1917,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             py::dict macro_dict, macro_next_dict;
             py::dict macro_mask_dict, macro_next_mask_dict;
 
-            if (h > 0) {
-                for (const std::string& ticker : holder->macro_tickers) {
-                    py::dict td, td_next;
+            for (const std::string& ticker : holder->macro_tickers) {
+                py::dict td, td_next;
 
+                if (h > 0) {
                     td["ohlcv"] = py::array_t<float>(
                         {B, T, 5},
                         {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
@@ -1941,9 +1941,6 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
                         holder->macro_next_indicators[ticker].data(), make_capsule());
 
-                    macro_dict[py::str(ticker)] = td;
-                    macro_next_dict[py::str(ticker)] = td_next;
-
                     macro_mask_dict[py::str(ticker)] = py::array_t<int>(
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->macro_mask[ticker].data(), make_capsule());
@@ -1951,6 +1948,39 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->macro_next_mask[ticker].data(), make_capsule());
                 }
+
+                if (F > 0) {
+                    td["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_future_ohlcv[ticker].data(), make_capsule());
+
+                    td["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_future_indicators[ticker].data(), make_capsule());
+
+                    td["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->macro_future_mask[ticker].data(), make_capsule());
+
+                    td_next["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_next_future_ohlcv[ticker].data(), make_capsule());
+
+                    td_next["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_next_future_indicators[ticker].data(), make_capsule());
+
+                    td_next["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->macro_next_future_mask[ticker].data(), make_capsule());
+                }
+
+                macro_dict[py::str(ticker)] = td;
+                macro_next_dict[py::str(ticker)] = td_next;
             }
 
             // env_ids [B]

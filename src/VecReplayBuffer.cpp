@@ -232,6 +232,14 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
             result.s_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
             result.s_next_future_mask[ticker].resize(actual_batch * future_length);
         }
+        for (const auto& ticker : cached_macro_tickers_) {
+            result.macro_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
+            result.macro_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
+            result.macro_future_mask[ticker].resize(actual_batch * future_length);
+            result.macro_next_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
+            result.macro_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
+            result.macro_next_future_mask[ticker].resize(actual_batch * future_length);
+        }
     }
 
     // Build batch sample lists for each ticker (state and next_state)
@@ -367,6 +375,29 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
                         std::memcpy(result.s_future_mask[ticker].data() + i * mask_size,
                                    raw.mask.data(), mask_size * sizeof(int));
                         std::memcpy(result.s_next_future_mask[ticker].data() + i * mask_size,
+                                   raw_next.mask.data(), mask_size * sizeof(int));
+                    }
+
+                    // Macro future
+                    for (const auto& ticker : cached_macro_tickers_) {
+                        auto raw = env_->get_market_window_raw(ticker, t.state_day, 0, future_length);
+                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, 0, future_length);
+
+                        size_t ohlcv_size = future_length * 5;
+                        size_t ind_size = future_length * n_ind;
+
+                        for (size_t k = 0; k < ohlcv_size; ++k) {
+                            result.macro_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
+                            result.macro_next_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        }
+                        for (size_t k = 0; k < ind_size; ++k) {
+                            result.macro_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
+                            result.macro_next_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
+                        }
+                        size_t mask_size = future_length;
+                        std::memcpy(result.macro_future_mask[ticker].data() + i * mask_size,
+                                   raw.mask.data(), mask_size * sizeof(int));
+                        std::memcpy(result.macro_next_future_mask[ticker].data() + i * mask_size,
                                    raw_next.mask.data(), mask_size * sizeof(int));
                     }
                 }

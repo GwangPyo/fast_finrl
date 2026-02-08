@@ -114,6 +114,12 @@ public:
         std::map<std::string, std::vector<float>> macro_next_ohlcv;
         std::map<std::string, std::vector<float>> macro_next_indicators;
         std::map<std::string, std::vector<int>> macro_next_mask;
+        std::map<std::string, std::vector<float>> macro_future_ohlcv;
+        std::map<std::string, std::vector<float>> macro_future_indicators;
+        std::map<std::string, std::vector<int>> macro_future_mask;
+        std::map<std::string, std::vector<float>> macro_next_future_ohlcv;
+        std::map<std::string, std::vector<float>> macro_next_future_indicators;
+        std::map<std::string, std::vector<int>> macro_next_future_mask;
 
         std::vector<int> env_ids;                    // [batch]
         std::vector<float> actions;                  // [batch * action_flat_size]
