@@ -619,4 +619,64 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
     fill_obs(env_idx);
 }
 
+vector<nlohmann::json> VecFastFinRL::get_state() const {
+    vector<nlohmann::json> states(num_envs_);
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, num_envs_),
+        [this, &states](const tbb::blocked_range<int>& range) {
+            for (int i = range.begin(); i < range.end(); ++i) {
+                nlohmann::json state;
+
+                // Basic info
+                state["day"] = day_[i];
+                state["seed"] = seeds_[i];
+                state["done"] = false;
+                state["terminal"] = false;
+
+                // Portfolio
+                nlohmann::json portfolio;
+                portfolio["cash"] = cash_[i];
+
+                // Calculate total asset
+                double total_asset = cash_[i];
+                int base_idx = i * n_tickers_;
+                for (int t = 0; t < n_tickers_; ++t) {
+                    if (shares_[base_idx + t] > 0) {
+                        double close_price = get_close(i, t);
+                        total_asset += shares_[base_idx + t] * close_price;
+                    }
+                }
+                portfolio["total_asset"] = total_asset;
+
+                // Holdings
+                nlohmann::json holdings;
+                for (int t = 0; t < n_tickers_; ++t) {
+                    nlohmann::json h;
+                    h["shares"] = shares_[base_idx + t];
+                    h["avg_buy_price"] = avg_buy_price_[base_idx + t];
+                    holdings[tickers_[i][t]] = h;
+                }
+                portfolio["holdings"] = holdings;
+                state["portfolio"] = portfolio;
+
+                // Market data
+                nlohmann::json market;
+                for (int t = 0; t < n_tickers_; ++t) {
+                    nlohmann::json m;
+                    m["open"] = base_env_->get_raw_value(tickers_[i][t], day_[i], "open");
+                    m["high"] = base_env_->get_raw_value(tickers_[i][t], day_[i], "high");
+                    m["low"] = base_env_->get_raw_value(tickers_[i][t], day_[i], "low");
+                    m["close"] = base_env_->get_raw_value(tickers_[i][t], day_[i], "close");
+                    m["volume"] = base_env_->get_raw_value(tickers_[i][t], day_[i], "volume");
+                    market[tickers_[i][t]] = m;
+                }
+                state["market"] = market;
+
+                states[i] = std::move(state);
+            }
+        });
+
+    return states;
+}
+
 } // namespace fast_finrl

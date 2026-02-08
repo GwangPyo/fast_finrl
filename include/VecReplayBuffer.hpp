@@ -16,23 +16,23 @@ struct VecStoredTransition {
     // State (minimal)
     int state_day = 0;
     std::vector<std::string> tickers;
-    double state_cash = 0.0;
+    float state_cash = 0.0f;
     std::vector<int> state_shares;
-    std::vector<double> state_avg_buy_price;
+    std::vector<float> state_avg_buy_price;
 
-    // Action
-    std::vector<double> action;
+    // Action (flat storage, reshape by action_shape at sample time)
+    std::vector<float> action;
 
     // Reward & flags (supports multi-objective)
-    std::vector<double> rewards;  // size=1 for scalar, size>1 for multi-objective
+    std::vector<float> rewards;  // size=1 for scalar, size>1 for multi-objective
     bool done = false;
     bool terminal = false;
 
     // Next state (minimal)
     int next_state_day = 0;
-    double next_state_cash = 0.0;
+    float next_state_cash = 0.0f;
     std::vector<int> next_state_shares;
-    std::vector<double> next_state_avg_buy_price;
+    std::vector<float> next_state_avg_buy_price;
 };
 
 class VecReplayBuffer {
@@ -41,16 +41,19 @@ public:
 
     // Constructor - env is used for market data lookup
     // seed: default 42 for reproducibility, -1 for random_device
+    // action_shape: empty = default (n_tickers,), otherwise custom shape
     explicit VecReplayBuffer(std::shared_ptr<const FastFinRL> env,
                              size_t capacity = 1000000,
                              size_t batch_size = 256,
-                             int64_t seed = 42);
+                             int64_t seed = 42,
+                             std::vector<size_t> action_shape = {});
 
     // Constructor from VecFastFinRL (uses internal base_env)
     explicit VecReplayBuffer(const VecFastFinRL& vec_env,
                              size_t capacity = 1000000,
                              size_t batch_size = 256,
-                             int64_t seed = 42);
+                             int64_t seed = 42,
+                             std::vector<size_t> action_shape = {});
 
     // Add single transition
     void add(const VecStoredTransition& transition);
@@ -63,14 +66,14 @@ public:
         const std::vector<int>& state_days,        // [N]
         const std::vector<int>& next_state_days,   // [N]
         const std::vector<std::vector<std::string>>& tickers_list,  // [N][n_tickers]
-        const std::vector<double>& state_cash,     // [N]
-        const std::vector<double>& next_state_cash,// [N]
+        const std::vector<float>& state_cash,      // [N]
+        const std::vector<float>& next_state_cash, // [N]
         const int* state_shares,                   // [N * n_tickers]
         const int* next_state_shares,              // [N * n_tickers]
-        const double* state_avg_buy_price,         // [N * n_tickers]
-        const double* next_state_avg_buy_price,    // [N * n_tickers]
-        const double* actions,                     // [N * n_tickers]
-        const std::vector<std::vector<double>>& rewards,  // [N][n_objectives]
+        const float* state_avg_buy_price,          // [N * n_tickers]
+        const float* next_state_avg_buy_price,     // [N * n_tickers]
+        const float* actions,                      // [N * action_flat_size]
+        const std::vector<std::vector<float>>& rewards,   // [N][n_objectives]
         const std::vector<bool>& dones,            // [N]
         const std::vector<bool>& terminals,        // [N]
         int n_tickers
@@ -87,51 +90,63 @@ public:
 
     // Batch sample result
     struct SampleBatch {
-        // Per-ticker market data
-        std::map<std::string, std::vector<double>> s_ohlcv;     // [batch * (h+1) * 5] - OHLCV
-        std::map<std::string, std::vector<double>> s_indicators;
+        // Per-ticker market data: [batch * (h+1) * 5] for OHLCV
+        std::map<std::string, std::vector<float>> s_ohlcv;
+        std::map<std::string, std::vector<float>> s_indicators;
         std::map<std::string, std::vector<int>> s_mask;
 
-        std::map<std::string, std::vector<double>> s_next_ohlcv;
-        std::map<std::string, std::vector<double>> s_next_indicators;
+        std::map<std::string, std::vector<float>> s_next_ohlcv;
+        std::map<std::string, std::vector<float>> s_next_indicators;
         std::map<std::string, std::vector<int>> s_next_mask;
 
+        // Future market data (when future_length > 0)
+        std::map<std::string, std::vector<float>> s_future_ohlcv;
+        std::map<std::string, std::vector<float>> s_future_indicators;
+        std::map<std::string, std::vector<int>> s_future_mask;
+        std::map<std::string, std::vector<float>> s_next_future_ohlcv;
+        std::map<std::string, std::vector<float>> s_next_future_indicators;
+        std::map<std::string, std::vector<int>> s_next_future_mask;
+
         // Macro ticker market data
-        std::map<std::string, std::vector<double>> macro_ohlcv;
-        std::map<std::string, std::vector<double>> macro_indicators;
+        std::map<std::string, std::vector<float>> macro_ohlcv;
+        std::map<std::string, std::vector<float>> macro_indicators;
         std::map<std::string, std::vector<int>> macro_mask;
-        std::map<std::string, std::vector<double>> macro_next_ohlcv;
-        std::map<std::string, std::vector<double>> macro_next_indicators;
+        std::map<std::string, std::vector<float>> macro_next_ohlcv;
+        std::map<std::string, std::vector<float>> macro_next_indicators;
         std::map<std::string, std::vector<int>> macro_next_mask;
 
         std::vector<int> env_ids;                    // [batch]
-        std::vector<double> actions;                 // [batch * n_tickers]
-        std::vector<std::vector<double>> rewards;    // [batch][n_objectives]
+        std::vector<float> actions;                  // [batch * action_flat_size]
+        std::vector<std::vector<float>> rewards;     // [batch][n_objectives]
         std::vector<bool> dones;                     // [batch]
         int n_objectives = 1;
 
         // Portfolio state
-        std::vector<double> state_cash;
-        std::vector<double> next_state_cash;
+        std::vector<float> state_cash;
+        std::vector<float> next_state_cash;
         std::vector<int> state_shares;
         std::vector<int> next_state_shares;
-        std::vector<double> state_avg_buy_price;
-        std::vector<double> next_state_avg_buy_price;
+        std::vector<float> state_avg_buy_price;
+        std::vector<float> next_state_avg_buy_price;
 
         std::vector<std::vector<std::string>> tickers;  // [batch][n_tickers] - per-sample tickers
         std::vector<std::string> unique_tickers;          // union of all tickers in batch
         std::vector<std::string> macro_tickers;
         std::vector<std::string> indicator_names;
+        std::vector<size_t> action_shape;            // action shape for reshape
         int batch_size;
-        int h;
+        int history_length;
+        int future_length;
         int n_tickers;
         int n_macro_tickers = 0;
         int n_indicators;
     };
 
     // Sample with market data (parallel fetch)
-    SampleBatch sample(int h, size_t batch_size) const;
-    SampleBatch sample(int h) const;  // uses default batch_size
+    // history_length: 0 = no history, >0 = h history days
+    // future_length: 0 = no future, >0 = future days
+    SampleBatch sample(size_t batch_size, int history_length = 0, int future_length = 0) const;
+    SampleBatch sample(int history_length = 0) const;  // uses default batch_size
 
     size_t size() const;
     size_t capacity() const { return capacity_; }
@@ -146,6 +161,7 @@ private:
     std::vector<VecStoredTransition> buffer_;
     size_t capacity_;
     size_t batch_size_;
+    std::vector<size_t> action_shape_;
     size_t write_idx_ = 0;
     bool full_ = false;
     mutable std::mt19937 rng_;
@@ -157,8 +173,8 @@ private:
     int n_macro_tickers_ = 0;
 
     // Pre-allocated sample buffers (reused across calls)
-    mutable std::vector<double> sample_ohlcv_buf_;
-    mutable std::vector<double> sample_ind_buf_;
+    mutable std::vector<float> sample_ohlcv_buf_;
+    mutable std::vector<float> sample_ind_buf_;
     mutable std::vector<int> sample_mask_buf_;
 };
 

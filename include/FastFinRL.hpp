@@ -69,6 +69,8 @@ public:
     nlohmann::json get_state() const;
     double get_raw_value(const string& ticker, int day, const string& column) const;
     const vector<string>& get_macro_tickers() const { return macro_tickers_; }
+    const vector<string>& get_tickers() const { return active_tickers_; }
+    int n_tickers() const { return static_cast<int>(active_tickers_.size()); }
 
     // Market data window query (like DB)
     // Returns past [day-h, day-1] and future [day+1, day+future] market data

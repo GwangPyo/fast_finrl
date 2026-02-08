@@ -12,23 +12,23 @@ struct StoredTransition {
     // State (minimal)
     int state_day = 0;
     std::vector<std::string> tickers;
-    double state_cash = 0.0;
+    float state_cash = 0.0f;
     std::vector<int> state_shares;
-    std::vector<double> state_avg_buy_price;
+    std::vector<float> state_avg_buy_price;
 
-    // Action
-    std::vector<double> action;
+    // Action (flat storage, reshape by action_shape at sample time)
+    std::vector<float> action;
 
     // Reward & flags (supports multi-objective)
-    std::vector<double> rewards;  // size=1 for scalar, size>1 for multi-objective
+    std::vector<float> rewards;  // size=1 for scalar, size>1 for multi-objective
     bool done = false;
     bool terminal = false;
 
     // Next state (minimal)
     int next_state_day = 0;
-    double next_state_cash = 0.0;
+    float next_state_cash = 0.0f;
     std::vector<int> next_state_shares;
-    std::vector<double> next_state_avg_buy_price;
+    std::vector<float> next_state_avg_buy_price;
 };
 
 class ReplayBuffer {
@@ -37,10 +37,12 @@ public:
 
     // capacity: 100K (small), 1M (default), 5M (large)
     // seed: default 42 for reproducibility, -1 for random_device
+    // action_shape: empty = default (n_tickers,), otherwise custom shape
     explicit ReplayBuffer(std::shared_ptr<const FastFinRL> env,
                           size_t capacity = 1000000,
                           size_t batch_size = 256,
-                          int64_t seed = 42);
+                          int64_t seed = 42,
+                          std::vector<size_t> action_shape = {});
 
     // Add transition to buffer (circular)
     void add(const StoredTransition& transition);
@@ -50,13 +52,13 @@ public:
     void add_transition(
         int state_day, int next_state_day,
         const std::vector<std::string>& tickers,
-        double state_cash, double next_state_cash,
+        float state_cash, float next_state_cash,
         const std::vector<int>& state_shares,
         const std::vector<int>& next_state_shares,
-        const std::vector<double>& state_avg_buy_price,
-        const std::vector<double>& next_state_avg_buy_price,
-        const std::vector<double>& action,
-        const std::vector<double>& rewards, bool done, bool terminal
+        const std::vector<float>& state_avg_buy_price,
+        const std::vector<float>& next_state_avg_buy_price,
+        const std::vector<float>& action,
+        const std::vector<float>& rewards, bool done, bool terminal
     );
 
     // Sample random indices
@@ -74,48 +76,60 @@ public:
         // ohlcv shape: [batch, h+1, 5] (h history + current) - OHLCV
         // indicators shape: [batch, h+1, n_ind]
         // mask shape: [batch, h+1] (1=valid, 0=padding)
-        std::map<std::string, std::vector<double>> s_ohlcv;     // [batch * (h+1) * 5]
-        std::map<std::string, std::vector<double>> s_indicators;
+        std::map<std::string, std::vector<float>> s_ohlcv;     // [batch * (h+1) * 5]
+        std::map<std::string, std::vector<float>> s_indicators;
         std::map<std::string, std::vector<int>> s_mask;         // nullptr equivalent when h=0
 
-        std::map<std::string, std::vector<double>> s_next_ohlcv;
-        std::map<std::string, std::vector<double>> s_next_indicators;
+        std::map<std::string, std::vector<float>> s_next_ohlcv;
+        std::map<std::string, std::vector<float>> s_next_indicators;
         std::map<std::string, std::vector<int>> s_next_mask;
 
+        // Future market data (when future_length > 0)
+        std::map<std::string, std::vector<float>> s_future_ohlcv;
+        std::map<std::string, std::vector<float>> s_future_indicators;
+        std::map<std::string, std::vector<int>> s_future_mask;
+        std::map<std::string, std::vector<float>> s_next_future_ohlcv;
+        std::map<std::string, std::vector<float>> s_next_future_indicators;
+        std::map<std::string, std::vector<int>> s_next_future_mask;
+
         // Macro ticker market data
-        std::map<std::string, std::vector<double>> macro_ohlcv;
-        std::map<std::string, std::vector<double>> macro_indicators;
+        std::map<std::string, std::vector<float>> macro_ohlcv;
+        std::map<std::string, std::vector<float>> macro_indicators;
         std::map<std::string, std::vector<int>> macro_mask;
-        std::map<std::string, std::vector<double>> macro_next_ohlcv;
-        std::map<std::string, std::vector<double>> macro_next_indicators;
+        std::map<std::string, std::vector<float>> macro_next_ohlcv;
+        std::map<std::string, std::vector<float>> macro_next_indicators;
         std::map<std::string, std::vector<int>> macro_next_mask;
 
-        std::vector<double> actions;                 // [batch * n_tickers]
-        std::vector<std::vector<double>> rewards;    // [batch][n_objectives]
+        std::vector<float> actions;                  // [batch * action_flat_size]
+        std::vector<std::vector<float>> rewards;     // [batch][n_objectives]
         std::vector<bool> dones;                     // [batch]
         int n_objectives = 1;
 
         // Portfolio state
-        std::vector<double> state_cash;      // [batch]
-        std::vector<double> next_state_cash; // [batch]
+        std::vector<float> state_cash;       // [batch]
+        std::vector<float> next_state_cash;  // [batch]
         std::vector<int> state_shares;       // [batch * n_tickers]
         std::vector<int> next_state_shares;  // [batch * n_tickers]
-        std::vector<double> state_avg_buy_price;      // [batch * n_tickers]
-        std::vector<double> next_state_avg_buy_price; // [batch * n_tickers]
+        std::vector<float> state_avg_buy_price;      // [batch * n_tickers]
+        std::vector<float> next_state_avg_buy_price; // [batch * n_tickers]
 
         std::vector<std::string> tickers;
         std::vector<std::string> macro_tickers;      // macro ticker list
         std::vector<std::string> indicator_names;
+        std::vector<size_t> action_shape;            // action shape for reshape
         int batch_size;
-        int h;
+        int history_length;
+        int future_length;
         int n_tickers;
         int n_macro_tickers = 0;
         int n_indicators;
     };
 
     // Sample with market data (parallel fetch)
-    SampleBatch sample(int h, size_t batch_size) const;
-    SampleBatch sample(int h) const; // uses default batch_size
+    // history_length: 0 = no history, >0 = h history days
+    // future_length: 0 = no future, >0 = future days
+    SampleBatch sample(size_t batch_size, int history_length = 0, int future_length = 0) const;
+    SampleBatch sample(int history_length = 0) const; // uses default batch_size
 
     size_t size() const;
     size_t capacity() const { return capacity_; }
@@ -130,6 +144,7 @@ private:
     std::vector<StoredTransition> buffer_;
     size_t capacity_;
     size_t batch_size_;
+    std::vector<size_t> action_shape_;
     size_t write_idx_ = 0;
     bool full_ = false;
     mutable std::mt19937 rng_;

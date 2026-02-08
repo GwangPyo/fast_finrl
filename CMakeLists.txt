@@ -23,7 +23,17 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/pybind/pybind11.git
     GIT_TAG v2.11.1
 )
-FetchContent_MakeAvailable(DataFrame pybind11)
+FetchContent_Declare(
+    xtl
+    GIT_REPOSITORY https://github.com/xtensor-stack/xtl.git
+    GIT_TAG 0.7.7
+)
+FetchContent_Declare(
+    xtensor
+    GIT_REPOSITORY https://github.com/xtensor-stack/xtensor.git
+    GIT_TAG 0.25.0
+)
+FetchContent_MakeAvailable(DataFrame pybind11 xtl xtensor)
 
 # System packages
 find_package(nlohmann_json REQUIRED)
@@ -47,6 +57,7 @@ target_link_libraries(fast_finrl_lib PUBLIC
     TBB::tbb
     Arrow::arrow_shared
     Parquet::parquet_shared
+    xtensor
 )
 
 # Python bindings

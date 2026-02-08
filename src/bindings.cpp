@@ -420,12 +420,23 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Accessor methods
         .def("get_indicator_names", &fast_finrl::FastFinRL::get_indicator_names,
              "Get set of technical indicator column names")
+        .def("n_indicators", [](const fast_finrl::FastFinRL& self) {
+            return static_cast<int>(self.get_indicator_names().size());
+        }, "Get number of technical indicators")
+        .def("n_macro", [](const fast_finrl::FastFinRL& self) {
+            return static_cast<int>(self.get_macro_tickers().size());
+        }, "Get number of macro tickers")
 
         .def("get_all_tickers", &fast_finrl::FastFinRL::get_all_tickers,
              "Get set of all available ticker symbols")
 
         .def("get_macro_tickers", &fast_finrl::FastFinRL::get_macro_tickers,
              "Get list of macro ticker symbols")
+
+        .def("get_tickers", &fast_finrl::FastFinRL::get_tickers,
+             "Get current active tickers")
+        .def("n_tickers", &fast_finrl::FastFinRL::n_tickers,
+             "Get number of current active tickers")
 
         .def("get_max_day", &fast_finrl::FastFinRL::get_max_day,
              "Get maximum day index")
@@ -559,22 +570,25 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
     // ReplayBuffer binding
     py::class_<fast_finrl::ReplayBuffer>(m, "ReplayBuffer")
-        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
+        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed,
+                        std::optional<std::vector<size_t>> action_shape) {
+            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
             return std::make_unique<fast_finrl::ReplayBuffer>(
-                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
+                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
-           "Create ReplayBuffer. capacity: 100K (small), 1M (default), 5M (large). seed: 42 default for reproducibility")
+           py::arg("action_shape") = py::none(),
+           "Create ReplayBuffer. capacity: 100K-5M. seed: 42 for reproducibility. action_shape: None=(n_tickers,), or custom tuple")
         .def("add", [](fast_finrl::ReplayBuffer& self,
                        const py::dict& state,
-                       const std::vector<double>& action,
+                       py::array_t<double, py::array::c_style> action_arr,
                        py::object reward,
                        const py::dict& next_state,
                        bool done) {
             int state_day, next_state_day;
-            double state_cash, next_state_cash;
+            float state_cash, next_state_cash;
             std::vector<std::string> tickers;
             std::vector<int> state_shares, next_state_shares;
-            std::vector<double> state_avg, next_state_avg;
+            std::vector<float> state_avg, next_state_avg;
 
             // Auto-detect format: json has 'portfolio', vec has 'cash' directly
             if (state.contains("portfolio")) {
@@ -587,28 +601,28 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 py::dict holdings = portfolio["holdings"].cast<py::dict>();
                 py::dict next_holdings = next_portfolio["holdings"].cast<py::dict>();
 
-                state_cash = portfolio["cash"].cast<double>();
-                next_state_cash = next_portfolio["cash"].cast<double>();
+                state_cash = static_cast<float>(portfolio["cash"].cast<double>());
+                next_state_cash = static_cast<float>(next_portfolio["cash"].cast<double>());
 
                 for (auto item : holdings) {
                     std::string tic = item.first.cast<std::string>();
                     tickers.push_back(tic);
                     py::dict h = item.second.cast<py::dict>();
                     state_shares.push_back(h["shares"].cast<int>());
-                    state_avg.push_back(h["avg_buy_price"].cast<double>());
+                    state_avg.push_back(static_cast<float>(h["avg_buy_price"].cast<double>()));
                 }
 
                 for (const auto& tic : tickers) {
                     py::dict h = next_holdings[py::str(tic)].cast<py::dict>();
                     next_state_shares.push_back(h["shares"].cast<int>());
-                    next_state_avg.push_back(h["avg_buy_price"].cast<double>());
+                    next_state_avg.push_back(static_cast<float>(h["avg_buy_price"].cast<double>()));
                 }
             } else {
                 // Vec format
                 state_day = state["day"].cast<int>();
                 next_state_day = next_state["day"].cast<int>();
-                state_cash = state["cash"].cast<double>();
-                next_state_cash = next_state["cash"].cast<double>();
+                state_cash = static_cast<float>(state["cash"].cast<double>());
+                next_state_cash = static_cast<float>(next_state["cash"].cast<double>());
                 tickers = state["tickers"].cast<std::vector<std::string>>();
 
                 auto s_shares = state["shares"].cast<py::array_t<int>>();
@@ -624,16 +638,25 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
                 std::memcpy(state_shares.data(), s_shares.data(), n * sizeof(int));
                 std::memcpy(next_state_shares.data(), ns_shares.data(), n * sizeof(int));
-                std::memcpy(state_avg.data(), s_avg.data(), n * sizeof(double));
-                std::memcpy(next_state_avg.data(), ns_avg.data(), n * sizeof(double));
+                for (int i = 0; i < n; ++i) {
+                    state_avg[i] = static_cast<float>(s_avg.data()[i]);
+                    next_state_avg[i] = static_cast<float>(ns_avg.data()[i]);
+                }
+            }
+
+            // Convert action to float
+            std::vector<float> action(action_arr.size());
+            for (size_t i = 0; i < action.size(); ++i) {
+                action[i] = static_cast<float>(action_arr.data()[i]);
             }
 
             // Handle scalar or multi-objective rewards
-            std::vector<double> rewards;
+            std::vector<float> rewards;
             if (py::isinstance<py::list>(reward) || py::isinstance<py::array>(reward)) {
-                rewards = reward.cast<std::vector<double>>();
+                auto r_vec = reward.cast<std::vector<double>>();
+                for (double r : r_vec) rewards.push_back(static_cast<float>(r));
             } else {
-                rewards.push_back(reward.cast<double>());
+                rewards.push_back(static_cast<float>(reward.cast<double>()));
             }
 
             self.add_transition(state_day, next_state_day, tickers,
@@ -645,23 +668,29 @@ PYBIND11_MODULE(fast_finrl_py, m) {
            "Add transition: (state, action, reward, next_state, done). Auto-detects json/vec format")
         .def("sample_indices", &fast_finrl::ReplayBuffer::sample_indices, py::arg("batch_size"),
              "Sample random indices from buffer")
-        .def("sample", [](const fast_finrl::ReplayBuffer& self, std::optional<int> h_opt, std::optional<size_t> batch_size) -> py::tuple {
-            int h = h_opt.value_or(0);
-            // Returns: (s, a, r, s', s_mask, s'_mask)
-            // s/s': dict[ticker] -> ohlcv [batch, h, 5], indicators [batch, h, n_ind] (history only, no current)
+        .def("sample", [](const fast_finrl::ReplayBuffer& self,
+                         std::optional<size_t> batch_size,
+                         int history_length,
+                         int future_length) -> py::tuple {
+            // Returns: (s, a, r, s', done, s_mask, s'_mask)
+            // s/s': dict[ticker] -> ohlcv [batch, h, 5], indicators [batch, h, n_ind]
             // s_mask/s'_mask: dict[ticker] -> [batch, h] or None if h=0
-            // a: [batch, n_tickers]
-            // r: [batch]
+            // a: [batch, action_shape...]
+            // r: [batch, n_objectives]
 
             using Batch = fast_finrl::ReplayBuffer::SampleBatch;
             std::shared_ptr<Batch> holder = std::make_shared<Batch>(
-                batch_size ? self.sample(h, *batch_size) : self.sample(h)
+                batch_size ? self.sample(*batch_size, history_length, future_length)
+                           : self.sample(history_length)
             );
+
+            const int h = history_length;
 
             const int B = holder->batch_size;
             const int T = h;  // history only (no current day)
             const int n_ind = holder->n_indicators;
             const int n_tic = holder->n_tickers;
+            const int F = future_length;
 
             auto make_capsule = [holder]() {
                 return py::capsule(new std::shared_ptr<Batch>(holder),
@@ -681,31 +710,28 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const auto& ticker : holder->tickers) {
                 py::dict td, td_next;
 
-                // OHLCV [B, T, 5]
-                td["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->s_ohlcv[ticker].data(), make_capsule());
-
-                td["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->s_indicators[ticker].data(), make_capsule());
-
-                td_next["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->s_next_ohlcv[ticker].data(), make_capsule());
-
-                td_next["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->s_next_indicators[ticker].data(), make_capsule());
-
-                s_dict[py::str(ticker)] = td;
-                s_next_dict[py::str(ticker)] = td_next;
-
                 if (h > 0) {
+                    // OHLCV [B, T, 5]
+                    td["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_ohlcv[ticker].data(), make_capsule());
+
+                    td["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_indicators[ticker].data(), make_capsule());
+
+                    td_next["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_next_ohlcv[ticker].data(), make_capsule());
+
+                    td_next["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_next_indicators[ticker].data(), make_capsule());
+
                     py::cast<py::dict>(s_mask_dict)[py::str(ticker)] = py::array_t<int>(
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->s_mask[ticker].data(), make_capsule());
@@ -714,39 +740,73 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->s_next_mask[ticker].data(), make_capsule());
                 }
+
+                // Future data
+                if (F > 0) {
+                    td["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_future_ohlcv[ticker].data(), make_capsule());
+
+                    td["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_future_indicators[ticker].data(), make_capsule());
+
+                    td["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->s_future_mask[ticker].data(), make_capsule());
+
+                    td_next["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_next_future_ohlcv[ticker].data(), make_capsule());
+
+                    td_next["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_next_future_indicators[ticker].data(), make_capsule());
+
+                    td_next["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->s_next_future_mask[ticker].data(), make_capsule());
+                }
+
+                s_dict[py::str(ticker)] = td;
+                s_next_dict[py::str(ticker)] = td_next;
             }
 
             // Macro tickers - build s["macro"] and s_next["macro"]
             py::dict macro_dict, macro_next_dict;
             py::dict macro_mask_dict, macro_next_mask_dict;
 
-            for (const std::string& ticker : holder->macro_tickers) {
-                py::dict td, td_next;
+            if (h > 0) {
+                for (const std::string& ticker : holder->macro_tickers) {
+                    py::dict td, td_next;
 
-                td["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->macro_ohlcv[ticker].data(), make_capsule());
+                    td["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_ohlcv[ticker].data(), make_capsule());
 
-                td["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->macro_indicators[ticker].data(), make_capsule());
+                    td["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->macro_next_ohlcv[ticker].data(), make_capsule());
+                    td_next["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_next_ohlcv[ticker].data(), make_capsule());
 
-                td_next["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->macro_next_indicators[ticker].data(), make_capsule());
+                    td_next["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_next_indicators[ticker].data(), make_capsule());
 
-                macro_dict[py::str(ticker)] = td;
-                macro_next_dict[py::str(ticker)] = td_next;
+                    macro_dict[py::str(ticker)] = td;
+                    macro_next_dict[py::str(ticker)] = td_next;
 
-                if (h > 0) {
                     macro_mask_dict[py::str(ticker)] = py::array_t<int>(
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->macro_mask[ticker].data(), make_capsule());
@@ -757,15 +817,28 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 }
             }
 
-            // Actions [B, n_tickers]
-            py::array_t<double> actions({B, n_tic},
-                {n_tic * sizeof(double), sizeof(double)},
+            // Build action shape for numpy array
+            std::vector<py::ssize_t> action_dims = {B};
+            std::vector<py::ssize_t> action_strides;
+            size_t action_flat_size = 1;
+            for (size_t dim : holder->action_shape) action_flat_size *= dim;
+            for (size_t dim : holder->action_shape) action_dims.push_back(static_cast<py::ssize_t>(dim));
+
+            // Compute strides for action array
+            py::ssize_t stride = sizeof(float);
+            action_strides.resize(action_dims.size());
+            for (int i = static_cast<int>(action_dims.size()) - 1; i >= 0; --i) {
+                action_strides[i] = stride;
+                stride *= action_dims[i];
+            }
+
+            py::array_t<float> actions(action_dims, action_strides,
                 holder->actions.data(), make_capsule());
 
             // Rewards: always [B, reward_size]
             int n_obj = holder->n_objectives;
-            py::array_t<double> rewards({B, n_obj});
-            double* r_ptr = rewards.mutable_data();
+            py::array_t<float> rewards({B, n_obj});
+            float* r_ptr = rewards.mutable_data();
             for (int i = 0; i < B; ++i) {
                 for (int j = 0; j < n_obj; ++j) {
                     r_ptr[i * n_obj + j] = holder->rewards[i][j];
@@ -780,17 +853,17 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             // Portfolio state
-            py::array_t<double> state_cash({B}, {sizeof(double)},
+            py::array_t<float> state_cash({B}, {sizeof(float)},
                 holder->state_cash.data(), make_capsule());
-            py::array_t<double> next_state_cash({B}, {sizeof(double)},
+            py::array_t<float> next_state_cash({B}, {sizeof(float)},
                 holder->next_state_cash.data(), make_capsule());
             py::array_t<int> state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
                 holder->state_shares.data(), make_capsule());
             py::array_t<int> next_state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
                 holder->next_state_shares.data(), make_capsule());
-            py::array_t<double> state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+            py::array_t<float> state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
                 holder->state_avg_buy_price.data(), make_capsule());
-            py::array_t<double> next_state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+            py::array_t<float> next_state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
                 holder->next_state_avg_buy_price.data(), make_capsule());
 
             // Build portfolio dicts
@@ -808,6 +881,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             s_dict["portfolio"] = portfolio;
             s_dict["macro"] = macro_dict;
             s_dict["macro_tickers"] = holder->macro_tickers;
+            s_dict["action_shape"] = holder->action_shape;
             s_next_dict["indicator_names"] = holder->indicator_names;
             s_next_dict["tickers"] = holder->tickers;
             s_next_dict["portfolio"] = next_portfolio;
@@ -821,8 +895,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
-        }, py::arg("h") = 0, py::arg("batch_size") = py::none(),
-           "Sample batch: returns (s, a, r, s', done, s_mask, s'_mask). s/s' include portfolio. Mask is None if h=0")
+        }, py::arg("batch_size") = py::none(), py::arg("history_length") = 0, py::arg("future_length") = 0,
+           "Sample batch: returns (s, a, r, s', done, s_mask, s'_mask). h=0: no history, f=0: no future")
         .def("get", &fast_finrl::ReplayBuffer::get, py::arg("index"),
              py::return_value_policy::reference_internal,
              "Get transition by index")
@@ -1259,7 +1333,73 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def("get_macro_tickers", &fast_finrl::VecFastFinRL::get_macro_tickers, "Get macro tickers")
         .def("get_tickers", &fast_finrl::VecFastFinRL::get_tickers, "Get tickers for each env")
 
-        // Market window access (delegates to base_env)
+        // Market window access - vectorized version (batched days and ticker lists)
+        .def("get_market_window_numpy", [](const fast_finrl::VecFastFinRL& self,
+                                           py::array_t<int> days_arr,
+                                           const std::vector<std::vector<std::string>>& ticker_lists,
+                                           int h,
+                                           int future) -> py::list {
+            auto base_env = self.get_base_env();
+            int n_envs = static_cast<int>(days_arr.size());
+            const int* days = days_arr.data();
+
+            py::list results;
+            for (int i = 0; i < n_envs; ++i) {
+                using DataHolder = fast_finrl::FastFinRL::MultiTickerWindowData;
+                std::shared_ptr<DataHolder> holder = std::make_shared<DataHolder>(
+                    base_env->get_market_window_multi(ticker_lists[i], days[i], h, future)
+                );
+
+                int n_ind = holder->n_indicators;
+                py::dict result;
+
+                for (auto& [ticker, td] : holder->tickers) {
+                    py::dict ticker_dict;
+
+                    auto make_capsule = [holder]() {
+                        return py::capsule(new std::shared_ptr<DataHolder>(holder),
+                            [](void* p) { delete static_cast<std::shared_ptr<DataHolder>*>(p); });
+                    };
+
+                    ticker_dict["past_ohlcv"] = py::array_t<double>(
+                        {h, 5}, {5 * sizeof(double), sizeof(double)},
+                        td.past_ohlcv.data(), make_capsule());
+
+                    ticker_dict["past_indicators"] = py::array_t<double>(
+                        {h, n_ind}, {n_ind * sizeof(double), sizeof(double)},
+                        td.past_indicators.data(), make_capsule());
+
+                    ticker_dict["past_mask"] = py::array_t<int>(
+                        {h}, {sizeof(int)},
+                        td.past_mask.data(), make_capsule());
+
+                    ticker_dict["current_open"] = td.current_open;
+                    ticker_dict["current_mask"] = td.current_mask;
+
+                    if (future > 0) {
+                        ticker_dict["future_ohlcv"] = py::array_t<double>(
+                            {future, 5}, {5 * sizeof(double), sizeof(double)},
+                            td.future_ohlcv.data(), make_capsule());
+                        ticker_dict["future_mask"] = py::array_t<int>(
+                            {future}, {sizeof(int)},
+                            td.future_mask.data(), make_capsule());
+                    }
+
+                    result[py::str(ticker)] = ticker_dict;
+                }
+
+                py::list names;
+                for (const std::string& name : holder->indicator_names) {
+                    names.append(py::str(name));
+                }
+                result["indicator_names"] = names;
+                results.append(result);
+            }
+            return results;
+        }, py::arg("days"), py::arg("ticker_lists"), py::arg("h"), py::arg("future") = 0,
+           "Get market window for multiple envs (batched)")
+
+        // Market window access - single env version (delegates to base_env)
         .def("get_market_window_numpy", [](const fast_finrl::VecFastFinRL& self,
                                            const std::vector<std::string>& ticker_list,
                                            int day,
@@ -1337,7 +1477,57 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             return result;
         }, py::arg("ticker_list"), py::arg("day"), py::arg("h"), py::arg("future"),
-           "Get market window data (delegates to base environment)");
+           "Get market window data (delegates to base environment)")
+
+        // Properties delegated to base env
+        .def_property_readonly("initial_amount", [](const fast_finrl::VecFastFinRL& self) -> double {
+            return self.get_base_env()->initial_amount;
+        }, "Initial cash amount")
+        .def_property_readonly("hmax", [](const fast_finrl::VecFastFinRL& self) -> int {
+            return self.get_base_env()->hmax;
+        }, "Maximum shares per trade")
+        .def_property_readonly("buy_cost_pct", [](const fast_finrl::VecFastFinRL& self) -> double {
+            return self.get_base_env()->buy_cost_pct;
+        }, "Buy transaction cost percentage")
+        .def_property_readonly("sell_cost_pct", [](const fast_finrl::VecFastFinRL& self) -> double {
+            return self.get_base_env()->sell_cost_pct;
+        }, "Sell transaction cost percentage")
+        .def_property_readonly("stop_loss_tolerance", [](const fast_finrl::VecFastFinRL& self) -> double {
+            return self.get_base_env()->stop_loss_tolerance;
+        }, "Stop loss threshold")
+        .def_property_readonly("stop_loss_calculation", [](const fast_finrl::VecFastFinRL& self) -> std::string {
+            return self.get_base_env()->stop_loss_calculation;
+        }, "Stop loss price source")
+        .def_property_readonly("bidding", [](const fast_finrl::VecFastFinRL& self) -> std::string {
+            return self.get_base_env()->bidding;
+        }, "Bidding mode")
+
+        // Methods delegated to base env
+        .def("get_max_day", [](const fast_finrl::VecFastFinRL& self) -> int {
+            return self.get_base_env()->get_max_day();
+        }, "Get maximum day index in dataset")
+        .def("get_raw_value", [](const fast_finrl::VecFastFinRL& self,
+                                 const std::string& ticker, int day, const std::string& col) -> double {
+            return self.get_base_env()->get_raw_value(ticker, day, col);
+        }, py::arg("ticker"), py::arg("day"), py::arg("column"),
+           "Get raw OHLCV value for ticker/day")
+        .def("get_market_window", [](const fast_finrl::VecFastFinRL& self,
+                                     const std::string& ticker, int day, int h, int future) -> py::object {
+            return json_to_python(self.get_base_env()->get_market_window(ticker, day, h, future));
+        }, py::arg("ticker"), py::arg("day"), py::arg("h"), py::arg("future"),
+           "Get market window as dict (single ticker)")
+        .def("get_market_window_flat", [](const fast_finrl::VecFastFinRL& self,
+                                          const std::string& ticker, int day, int h, int future) -> py::object {
+            return json_to_python(self.get_base_env()->get_market_window_flat(ticker, day, h, future));
+        }, py::arg("ticker"), py::arg("day"), py::arg("h"), py::arg("future"),
+           "Get market window as flat dict (single ticker)")
+        .def("get_state", [](const fast_finrl::VecFastFinRL& self) -> py::list {
+            py::list states;
+            for (const auto& state : self.get_state()) {
+                states.append(json_to_python(state));
+            }
+            return states;
+        }, "Get current state for all environments");
 
     // VecStoredTransition binding
     py::class_<fast_finrl::VecStoredTransition>(m, "VecStoredTransition")
@@ -1360,17 +1550,23 @@ PYBIND11_MODULE(fast_finrl_py, m) {
     // VecReplayBuffer - Vectorized replay buffer for N environments
     py::class_<fast_finrl::VecReplayBuffer>(m, "VecReplayBuffer")
         // Constructor from FastFinRL
-        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed) {
+        .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed,
+                        std::optional<std::vector<size_t>> action_shape) {
+            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
             return std::make_unique<fast_finrl::VecReplayBuffer>(
-                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed);
+                std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
-           "Create VecReplayBuffer from FastFinRL instance. seed: 42 default for reproducibility")
+           py::arg("action_shape") = py::none(),
+           "Create VecReplayBuffer from FastFinRL. action_shape: None=(n_tickers,), or custom tuple")
 
         // Constructor from VecFastFinRL
-        .def(py::init([](fast_finrl::VecFastFinRL& env, size_t capacity, size_t batch_size, int64_t seed) {
-            return std::make_unique<fast_finrl::VecReplayBuffer>(env, capacity, batch_size, seed);
+        .def(py::init([](fast_finrl::VecFastFinRL& env, size_t capacity, size_t batch_size, int64_t seed,
+                        std::optional<std::vector<size_t>> action_shape) {
+            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
+            return std::make_unique<fast_finrl::VecReplayBuffer>(env, capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
-           "Create VecReplayBuffer from VecFastFinRL instance. seed: 42 default for reproducibility")
+           py::arg("action_shape") = py::none(),
+           "Create VecReplayBuffer from VecFastFinRL. action_shape: None=(n_tickers,), or custom tuple")
 
         // add_transition - add single transition (for testing)
         .def("add_transition", [](fast_finrl::VecReplayBuffer& self,
@@ -1380,9 +1576,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                                   double state_cash, double next_state_cash,
                                   const std::vector<int>& state_shares,
                                   const std::vector<int>& next_state_shares,
-                                  const std::vector<double>& state_avg_buy_price,
-                                  const std::vector<double>& next_state_avg_buy_price,
-                                  const std::vector<double>& action,
+                                  py::array_t<double> state_avg_buy_price_arr,
+                                  py::array_t<double> next_state_avg_buy_price_arr,
+                                  py::array_t<double> action_arr,
                                   py::object reward,
                                   bool done, bool terminal) {
             fast_finrl::VecStoredTransition t;
@@ -1390,17 +1586,30 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             t.state_day = state_day;
             t.next_state_day = next_state_day;
             t.tickers = tickers;
-            t.state_cash = state_cash;
-            t.next_state_cash = next_state_cash;
+            t.state_cash = static_cast<float>(state_cash);
+            t.next_state_cash = static_cast<float>(next_state_cash);
             t.state_shares = state_shares;
             t.next_state_shares = next_state_shares;
-            t.state_avg_buy_price = state_avg_buy_price;
-            t.next_state_avg_buy_price = next_state_avg_buy_price;
-            t.action = action;
+
+            // Convert double arrays to float
+            size_t n = state_avg_buy_price_arr.size();
+            t.state_avg_buy_price.resize(n);
+            t.next_state_avg_buy_price.resize(n);
+            for (size_t i = 0; i < n; ++i) {
+                t.state_avg_buy_price[i] = static_cast<float>(state_avg_buy_price_arr.data()[i]);
+                t.next_state_avg_buy_price[i] = static_cast<float>(next_state_avg_buy_price_arr.data()[i]);
+            }
+
+            t.action.resize(action_arr.size());
+            for (size_t i = 0; i < t.action.size(); ++i) {
+                t.action[i] = static_cast<float>(action_arr.data()[i]);
+            }
+
             if (py::isinstance<py::list>(reward) || py::isinstance<py::array>(reward)) {
-                t.rewards = reward.cast<std::vector<double>>();
+                auto r_vec = reward.cast<std::vector<double>>();
+                for (double r : r_vec) t.rewards.push_back(static_cast<float>(r));
             } else {
-                t.rewards = {reward.cast<double>()};
+                t.rewards = {static_cast<float>(reward.cast<double>())};
             }
             t.done = done;
             t.terminal = terminal;
@@ -1421,8 +1630,15 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                        py::object dones_obj) {
 
             auto actions_buf = actions_arr.request();
-            const double* actions = static_cast<const double*>(actions_buf.ptr);
+            const double* actions_double = static_cast<const double*>(actions_buf.ptr);
             int n_tickers = static_cast<int>(actions_buf.shape[1]);
+            size_t total_actions = actions_buf.shape[0] * actions_buf.shape[1];
+
+            // Convert actions to float
+            std::vector<float> actions(total_actions);
+            for (size_t i = 0; i < total_actions; ++i) {
+                actions[i] = static_cast<float>(actions_double[i]);
+            }
 
             // Auto-detect format: dict = vec format, list = object list format
             if (py::isinstance<py::dict>(states_obj)) {
@@ -1448,9 +1664,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 std::vector<int> env_ids(num_envs);
                 std::vector<int> state_days(num_envs);
                 std::vector<int> next_state_days(num_envs);
-                std::vector<double> state_cash(num_envs);
-                std::vector<double> next_state_cash(num_envs);
-                std::vector<std::vector<double>> rewards(num_envs);
+                std::vector<float> state_cash(num_envs);
+                std::vector<float> next_state_cash(num_envs);
+                std::vector<std::vector<float>> rewards(num_envs);
                 std::vector<bool> dones(num_envs);
                 std::vector<bool> terminals(num_envs);
 
@@ -1460,22 +1676,22 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 const double* next_cash_ptr = next_cash_arr.data();
                 const bool* terminal_ptr = next_terminal_arr.data();
 
-                // Handle rewards: array or list
-                std::vector<double> rewards_flat;
+                // Handle rewards: array or list (convert to float)
                 if (py::isinstance<py::array>(rewards_obj)) {
                     auto rewards_arr = rewards_obj.cast<py::array_t<double>>();
                     const double* rewards_ptr = rewards_arr.data();
                     for (int i = 0; i < num_envs; ++i) {
-                        rewards[i] = {rewards_ptr[i]};
+                        rewards[i] = {static_cast<float>(rewards_ptr[i])};
                     }
                 } else {
                     py::list rewards_list = rewards_obj.cast<py::list>();
                     for (int i = 0; i < num_envs; ++i) {
                         py::object r = rewards_list[i];
                         if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
-                            rewards[i] = r.cast<std::vector<double>>();
+                            auto r_vec = r.cast<std::vector<double>>();
+                            for (double rv : r_vec) rewards[i].push_back(static_cast<float>(rv));
                         } else {
-                            rewards[i] = {r.cast<double>()};
+                            rewards[i] = {static_cast<float>(r.cast<double>())};
                         }
                     }
                 }
@@ -1498,22 +1714,28 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     env_ids[i] = i;
                     state_days[i] = day_ptr[i];
                     next_state_days[i] = next_day_ptr[i];
-                    state_cash[i] = cash_ptr[i];
-                    next_state_cash[i] = next_cash_ptr[i];
+                    state_cash[i] = static_cast<float>(cash_ptr[i]);
+                    next_state_cash[i] = static_cast<float>(next_cash_ptr[i]);
                     terminals[i] = terminal_ptr[i];
                 }
 
                 const int* state_shares_ptr = shares_arr.data();
                 const int* next_state_shares_ptr = next_shares_arr.data();
-                const double* state_avg_ptr = avg_arr.data();
-                const double* next_state_avg_ptr = next_avg_arr.data();
+
+                // Convert avg arrays to float
+                std::vector<float> state_avg_flat(num_envs * n_tickers);
+                std::vector<float> next_state_avg_flat(num_envs * n_tickers);
+                for (int i = 0; i < num_envs * n_tickers; ++i) {
+                    state_avg_flat[i] = static_cast<float>(avg_arr.data()[i]);
+                    next_state_avg_flat[i] = static_cast<float>(next_avg_arr.data()[i]);
+                }
 
                 self.add_batch(
                     num_envs, env_ids, state_days, next_state_days, tickers_list,
                     state_cash, next_state_cash,
                     state_shares_ptr, next_state_shares_ptr,
-                    state_avg_ptr, next_state_avg_ptr,
-                    actions, rewards, dones, terminals, n_tickers
+                    state_avg_flat.data(), next_state_avg_flat.data(),
+                    actions.data(), rewards, dones, terminals, n_tickers
                 );
             } else {
                 // List format: list of state objects
@@ -1529,13 +1751,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 std::vector<int> state_days(num_envs);
                 std::vector<int> next_state_days(num_envs);
                 std::vector<std::vector<std::string>> tickers_list(num_envs);
-                std::vector<double> state_cash(num_envs);
-                std::vector<double> next_state_cash(num_envs);
+                std::vector<float> state_cash(num_envs);
+                std::vector<float> next_state_cash(num_envs);
                 std::vector<int> state_shares_flat(num_envs * n_tickers);
                 std::vector<int> next_state_shares_flat(num_envs * n_tickers);
-                std::vector<double> state_avg_flat(num_envs * n_tickers);
-                std::vector<double> next_state_avg_flat(num_envs * n_tickers);
-                std::vector<std::vector<double>> rewards(num_envs);
+                std::vector<float> state_avg_flat(num_envs * n_tickers);
+                std::vector<float> next_state_avg_flat(num_envs * n_tickers);
+                std::vector<std::vector<float>> rewards(num_envs);
                 std::vector<bool> dones(num_envs);
                 std::vector<bool> terminals(num_envs);
 
@@ -1547,8 +1769,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     state_days[i] = s.attr("day").cast<int>();
                     next_state_days[i] = ns.attr("day").cast<int>();
                     tickers_list[i] = s.attr("tickers").cast<std::vector<std::string>>();
-                    state_cash[i] = s.attr("cash").cast<double>();
-                    next_state_cash[i] = ns.attr("cash").cast<double>();
+                    state_cash[i] = static_cast<float>(s.attr("cash").cast<double>());
+                    next_state_cash[i] = static_cast<float>(ns.attr("cash").cast<double>());
 
                     auto s_shares = s.attr("shares").cast<py::array_t<int>>();
                     auto ns_shares = ns.attr("shares").cast<py::array_t<int>>();
@@ -1563,15 +1785,16 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     for (int j = 0; j < n_tickers; ++j) {
                         state_shares_flat[i * n_tickers + j] = s_shares_ptr[j];
                         next_state_shares_flat[i * n_tickers + j] = ns_shares_ptr[j];
-                        state_avg_flat[i * n_tickers + j] = s_avg_ptr[j];
-                        next_state_avg_flat[i * n_tickers + j] = ns_avg_ptr[j];
+                        state_avg_flat[i * n_tickers + j] = static_cast<float>(s_avg_ptr[j]);
+                        next_state_avg_flat[i * n_tickers + j] = static_cast<float>(ns_avg_ptr[j]);
                     }
 
                     py::object r = rewards_list[i];
                     if (py::isinstance<py::list>(r) || py::isinstance<py::array>(r)) {
-                        rewards[i] = r.cast<std::vector<double>>();
+                        auto r_vec = r.cast<std::vector<double>>();
+                        for (double rv : r_vec) rewards[i].push_back(static_cast<float>(rv));
                     } else {
-                        rewards[i] = {r.cast<double>()};
+                        rewards[i] = {static_cast<float>(r.cast<double>())};
                     }
 
                     dones[i] = dones_list[i].cast<bool>();
@@ -1583,7 +1806,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     state_cash, next_state_cash,
                     state_shares_flat.data(), next_state_shares_flat.data(),
                     state_avg_flat.data(), next_state_avg_flat.data(),
-                    actions, rewards, dones, terminals, n_tickers
+                    actions.data(), rewards, dones, terminals, n_tickers
                 );
             }
         }, py::arg("states"), py::arg("actions"), py::arg("rewards"),
@@ -1591,15 +1814,20 @@ PYBIND11_MODULE(fast_finrl_py, m) {
            "Add batch of transitions. Auto-detects format: dict=vec format, list=object list")
 
         // sample - same interface as ReplayBuffer
-        .def("sample", [](const fast_finrl::VecReplayBuffer& self, std::optional<int> h_opt, std::optional<size_t> batch_size) -> py::tuple {
-            int h = h_opt.value_or(0);
+        .def("sample", [](const fast_finrl::VecReplayBuffer& self,
+                         std::optional<size_t> batch_size,
+                         int history_length,
+                         int future_length) -> py::tuple {
             using Batch = fast_finrl::VecReplayBuffer::SampleBatch;
             std::shared_ptr<Batch> holder = std::make_shared<Batch>(
-                batch_size ? self.sample(h, *batch_size) : self.sample(h)
+                batch_size ? self.sample(*batch_size, history_length, future_length)
+                           : self.sample(history_length)
             );
 
+            const int h = history_length;
             const int B = holder->batch_size;
-            const int T = h;  // history only (no current day)
+            const int T = h;
+            const int F = future_length;
             const int n_ind = holder->n_indicators;
             const int n_tic = holder->n_tickers;
 
@@ -1621,30 +1849,27 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             for (const auto& ticker : holder->unique_tickers) {
                 py::dict td, td_next;
 
-                td["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->s_ohlcv[ticker].data(), make_capsule());
-
-                td["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->s_indicators[ticker].data(), make_capsule());
-
-                td_next["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->s_next_ohlcv[ticker].data(), make_capsule());
-
-                td_next["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->s_next_indicators[ticker].data(), make_capsule());
-
-                s_dict[py::str(ticker)] = td;
-                s_next_dict[py::str(ticker)] = td_next;
-
                 if (h > 0) {
+                    td["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_ohlcv[ticker].data(), make_capsule());
+
+                    td["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_indicators[ticker].data(), make_capsule());
+
+                    td_next["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_next_ohlcv[ticker].data(), make_capsule());
+
+                    td_next["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_next_indicators[ticker].data(), make_capsule());
+
                     py::cast<py::dict>(s_mask_dict)[py::str(ticker)] = py::array_t<int>(
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->s_mask[ticker].data(), make_capsule());
@@ -1652,39 +1877,73 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->s_next_mask[ticker].data(), make_capsule());
                 }
+
+                // Future data
+                if (F > 0) {
+                    td["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_future_ohlcv[ticker].data(), make_capsule());
+
+                    td["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_future_indicators[ticker].data(), make_capsule());
+
+                    td["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->s_future_mask[ticker].data(), make_capsule());
+
+                    td_next["future_ohlcv"] = py::array_t<float>(
+                        {B, F, 5},
+                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->s_next_future_ohlcv[ticker].data(), make_capsule());
+
+                    td_next["future_indicators"] = py::array_t<float>(
+                        {B, F, n_ind},
+                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->s_next_future_indicators[ticker].data(), make_capsule());
+
+                    td_next["future_mask"] = py::array_t<int>(
+                        {B, F}, {F * sizeof(int), sizeof(int)},
+                        holder->s_next_future_mask[ticker].data(), make_capsule());
+                }
+
+                s_dict[py::str(ticker)] = td;
+                s_next_dict[py::str(ticker)] = td_next;
             }
 
             // Macro tickers
             py::dict macro_dict, macro_next_dict;
             py::dict macro_mask_dict, macro_next_mask_dict;
 
-            for (const std::string& ticker : holder->macro_tickers) {
-                py::dict td, td_next;
+            if (h > 0) {
+                for (const std::string& ticker : holder->macro_tickers) {
+                    py::dict td, td_next;
 
-                td["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->macro_ohlcv[ticker].data(), make_capsule());
+                    td["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_ohlcv[ticker].data(), make_capsule());
 
-                td["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->macro_indicators[ticker].data(), make_capsule());
+                    td["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_indicators[ticker].data(), make_capsule());
 
-                td_next["ohlcv"] = py::array_t<double>(
-                    {B, T, 5},
-                    {T * 5 * sizeof(double), 5 * sizeof(double), sizeof(double)},
-                    holder->macro_next_ohlcv[ticker].data(), make_capsule());
+                    td_next["ohlcv"] = py::array_t<float>(
+                        {B, T, 5},
+                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
+                        holder->macro_next_ohlcv[ticker].data(), make_capsule());
 
-                td_next["indicators"] = py::array_t<double>(
-                    {B, T, n_ind},
-                    {T * n_ind * sizeof(double), n_ind * sizeof(double), sizeof(double)},
-                    holder->macro_next_indicators[ticker].data(), make_capsule());
+                    td_next["indicators"] = py::array_t<float>(
+                        {B, T, n_ind},
+                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
+                        holder->macro_next_indicators[ticker].data(), make_capsule());
 
-                macro_dict[py::str(ticker)] = td;
-                macro_next_dict[py::str(ticker)] = td_next;
+                    macro_dict[py::str(ticker)] = td;
+                    macro_next_dict[py::str(ticker)] = td_next;
 
-                if (h > 0) {
                     macro_mask_dict[py::str(ticker)] = py::array_t<int>(
                         {B, T}, {T * sizeof(int), sizeof(int)},
                         holder->macro_mask[ticker].data(), make_capsule());
@@ -1698,15 +1957,27 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             py::array_t<int> env_ids({B}, {sizeof(int)});
             std::copy(holder->env_ids.begin(), holder->env_ids.end(), env_ids.mutable_data());
 
-            // Actions [B, n_tickers]
-            py::array_t<double> actions({B, n_tic},
-                {n_tic * sizeof(double), sizeof(double)},
+            // Build action shape for numpy array
+            std::vector<py::ssize_t> action_dims = {B};
+            std::vector<py::ssize_t> action_strides;
+            size_t action_flat_size = 1;
+            for (size_t dim : holder->action_shape) action_flat_size *= dim;
+            for (size_t dim : holder->action_shape) action_dims.push_back(static_cast<py::ssize_t>(dim));
+
+            py::ssize_t stride = sizeof(float);
+            action_strides.resize(action_dims.size());
+            for (int i = static_cast<int>(action_dims.size()) - 1; i >= 0; --i) {
+                action_strides[i] = stride;
+                stride *= action_dims[i];
+            }
+
+            py::array_t<float> actions(action_dims, action_strides,
                 holder->actions.data(), make_capsule());
 
             // Rewards [B, n_objectives]
             int n_obj = holder->n_objectives;
-            py::array_t<double> rewards({B, n_obj});
-            double* r_ptr = rewards.mutable_data();
+            py::array_t<float> rewards({B, n_obj});
+            float* r_ptr = rewards.mutable_data();
             for (int i = 0; i < B; ++i) {
                 for (int j = 0; j < n_obj; ++j) {
                     r_ptr[i * n_obj + j] = holder->rewards[i][j];
@@ -1721,17 +1992,17 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             // Portfolio state
-            py::array_t<double> state_cash({B}, {sizeof(double)},
+            py::array_t<float> state_cash({B}, {sizeof(float)},
                 holder->state_cash.data(), make_capsule());
-            py::array_t<double> next_state_cash({B}, {sizeof(double)},
+            py::array_t<float> next_state_cash({B}, {sizeof(float)},
                 holder->next_state_cash.data(), make_capsule());
             py::array_t<int> state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
                 holder->state_shares.data(), make_capsule());
             py::array_t<int> next_state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
                 holder->next_state_shares.data(), make_capsule());
-            py::array_t<double> state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+            py::array_t<float> state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
                 holder->state_avg_buy_price.data(), make_capsule());
-            py::array_t<double> next_state_avg({B, n_tic}, {n_tic * sizeof(double), sizeof(double)},
+            py::array_t<float> next_state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
                 holder->next_state_avg_buy_price.data(), make_capsule());
 
             // Build portfolio dicts
@@ -1745,15 +2016,16 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             // Metadata
             s_dict["indicator_names"] = holder->indicator_names;
-            s_dict["tickers"] = holder->tickers;  // [batch][n_tickers] - per-sample tickers
-            s_dict["unique_tickers"] = holder->unique_tickers;  // union of all tickers
+            s_dict["tickers"] = holder->tickers;
+            s_dict["unique_tickers"] = holder->unique_tickers;
             s_dict["portfolio"] = portfolio;
             s_dict["macro"] = macro_dict;
             s_dict["macro_tickers"] = holder->macro_tickers;
             s_dict["env_ids"] = env_ids;
+            s_dict["action_shape"] = holder->action_shape;
 
             s_next_dict["indicator_names"] = holder->indicator_names;
-            s_next_dict["tickers"] = holder->tickers;  // [batch][n_tickers]
+            s_next_dict["tickers"] = holder->tickers;
             s_next_dict["unique_tickers"] = holder->unique_tickers;
             s_next_dict["portfolio"] = next_portfolio;
             s_next_dict["macro"] = macro_next_dict;
@@ -1765,8 +2037,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             }
 
             return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
-        }, py::arg("h") = 0, py::arg("batch_size") = py::none(),
-           "Sample batch with env_ids. Returns (s, a, r, s', done, s_mask, s'_mask)")
+        }, py::arg("batch_size") = py::none(), py::arg("history_length") = 0, py::arg("future_length") = 0,
+           "Sample batch with env_ids. h=0: no history, f=0: no future")
 
         .def("sample_indices", &fast_finrl::VecReplayBuffer::sample_indices, py::arg("batch_size"),
              "Sample random indices from buffer")

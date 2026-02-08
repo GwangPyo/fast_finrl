@@ -9,14 +9,20 @@
 
 namespace fast_finrl {
 
-ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed)
+ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed, std::vector<size_t> action_shape)
     : env_(std::move(env))
     , capacity_(capacity)
     , batch_size_(batch_size)
+    , action_shape_(std::move(action_shape))
     , rng_(seed >= 0 ? static_cast<unsigned int>(seed) : std::random_device{}())
 {
     // Reserve up to 1M, larger buffers grow dynamically
     buffer_.reserve(std::min(capacity_, size_t(1000000)));
+
+    // Default action_shape = (n_tickers,)
+    if (action_shape_.empty() && env_) {
+        action_shape_ = {static_cast<size_t>(env_->n_tickers())};
+    }
 }
 
 void ReplayBuffer::add(const StoredTransition& transition) {
@@ -32,13 +38,13 @@ void ReplayBuffer::add(const StoredTransition& transition) {
 void ReplayBuffer::add_transition(
     int state_day, int next_state_day,
     const std::vector<std::string>& tickers,
-    double state_cash, double next_state_cash,
+    float state_cash, float next_state_cash,
     const std::vector<int>& state_shares,
     const std::vector<int>& next_state_shares,
-    const std::vector<double>& state_avg_buy_price,
-    const std::vector<double>& next_state_avg_buy_price,
-    const std::vector<double>& action,
-    const std::vector<double>& rewards, bool done, bool terminal)
+    const std::vector<float>& state_avg_buy_price,
+    const std::vector<float>& next_state_avg_buy_price,
+    const std::vector<float>& action,
+    const std::vector<float>& rewards, bool done, bool terminal)
 {
     StoredTransition t;
     t.state_day = state_day;
@@ -89,17 +95,19 @@ ReplayBuffer::MultiTickerWindowData ReplayBuffer::get_market_data(
     return env_->get_market_window_multi(t.tickers, day, h, future);
 }
 
-ReplayBuffer::SampleBatch ReplayBuffer::sample(int h) const {
-    return sample(h, batch_size_);
+ReplayBuffer::SampleBatch ReplayBuffer::sample(int history_length) const {
+    return sample(batch_size_, history_length, 0);
 }
 
-ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
+ReplayBuffer::SampleBatch ReplayBuffer::sample(size_t batch_size, int history_length, int future_length) const {
     auto indices = sample_indices(batch_size);
     const size_t actual_batch = indices.size();
 
     SampleBatch result;
     result.batch_size = static_cast<int>(actual_batch);
-    result.h = h;
+    result.history_length = history_length;
+    result.future_length = future_length;
+    result.action_shape = action_shape_;
 
     if (actual_batch == 0) return result;
 
@@ -114,13 +122,17 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
     result.indicator_names.assign(indicator_set.begin(), indicator_set.end());
     result.n_indicators = static_cast<int>(result.indicator_names.size());
 
+    const int h = history_length;
     const int time_len = h;  // h history only (no current day to prevent lookahead)
     const int n_tickers = result.n_tickers;
     const int n_ind = result.n_indicators;
-    const int n_obj = result.n_objectives;
+
+    // Compute action flat size from action_shape
+    size_t action_flat_size = 1;
+    for (size_t dim : action_shape_) action_flat_size *= dim;
 
     // Pre-allocate all arrays
-    result.actions.resize(actual_batch * n_tickers);
+    result.actions.resize(actual_batch * action_flat_size);
     result.rewards.resize(actual_batch);
     result.dones.resize(actual_batch);
     result.state_cash.resize(actual_batch);
@@ -130,14 +142,26 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
     result.state_avg_buy_price.resize(actual_batch * n_tickers);
     result.next_state_avg_buy_price.resize(actual_batch * n_tickers);
 
-    for (const auto& ticker : result.tickers) {
-        result.s_ohlcv[ticker].resize(actual_batch * time_len * 5);
-        result.s_indicators[ticker].resize(actual_batch * time_len * n_ind);
-        result.s_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-        result.s_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-        if (h > 0) {
+    if (h > 0) {
+        for (const auto& ticker : result.tickers) {
+            result.s_ohlcv[ticker].resize(actual_batch * time_len * 5);
+            result.s_indicators[ticker].resize(actual_batch * time_len * n_ind);
+            result.s_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
+            result.s_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
             result.s_mask[ticker].resize(actual_batch * time_len);
             result.s_next_mask[ticker].resize(actual_batch * time_len);
+        }
+    }
+
+    // Future market data
+    if (future_length > 0) {
+        for (const auto& ticker : result.tickers) {
+            result.s_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
+            result.s_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
+            result.s_future_mask[ticker].resize(actual_batch * future_length);
+            result.s_next_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
+            result.s_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
+            result.s_next_future_mask[ticker].resize(actual_batch * future_length);
         }
     }
 
@@ -146,12 +170,12 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
     result.macro_tickers = macro_tickers;
     result.n_macro_tickers = static_cast<int>(macro_tickers.size());
 
-    for (const std::string& ticker : macro_tickers) {
-        result.macro_ohlcv[ticker].resize(actual_batch * time_len * 5);
-        result.macro_indicators[ticker].resize(actual_batch * time_len * n_ind);
-        result.macro_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-        result.macro_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-        if (h > 0) {
+    if (h > 0) {
+        for (const std::string& ticker : macro_tickers) {
+            result.macro_ohlcv[ticker].resize(actual_batch * time_len * 5);
+            result.macro_indicators[ticker].resize(actual_batch * time_len * n_ind);
+            result.macro_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
+            result.macro_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
             result.macro_mask[ticker].resize(actual_batch * time_len);
             result.macro_next_mask[ticker].resize(actual_batch * time_len);
         }
@@ -163,9 +187,12 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
             for (size_t i = range.begin(); i < range.end(); ++i) {
                 const auto& t = buffer_[indices[i]];
 
-                // Copy actions and portfolio state
+                // Copy actions (flat)
+                for (size_t j = 0; j < action_flat_size && j < t.action.size(); ++j) {
+                    result.actions[i * action_flat_size + j] = t.action[j];
+                }
+                // Copy portfolio state
                 for (int j = 0; j < n_tickers; ++j) {
-                    result.actions[i * n_tickers + j] = t.action[j];
                     result.state_shares[i * n_tickers + j] = t.state_shares[j];
                     result.next_state_shares[i * n_tickers + j] = t.next_state_shares[j];
                     result.state_avg_buy_price[i * n_tickers + j] = t.state_avg_buy_price[j];
@@ -177,55 +204,76 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int h, size_t batch_size) const {
                 result.state_cash[i] = t.state_cash;
                 result.next_state_cash[i] = t.next_state_cash;
 
-                // Use get_market_window_raw for flat arrays - single memcpy per ticker
-                for (const auto& ticker : t.tickers) {
-                    auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
-                    auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
+                // History market data - convert double to float
+                if (h > 0) {
+                    for (const auto& ticker : t.tickers) {
+                        auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
+                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
 
-                    size_t ohlcv_size = time_len * 5;
-                    size_t ind_size = time_len * n_ind;
+                        size_t ohlcv_size = time_len * 5;
+                        size_t ind_size = time_len * n_ind;
 
-                    // Single memcpy each
-                    std::memcpy(result.s_ohlcv[ticker].data() + i * ohlcv_size,
-                               raw.ohlcv.data(), ohlcv_size * sizeof(double));
-                    std::memcpy(result.s_indicators[ticker].data() + i * ind_size,
-                               raw.indicators.data(), ind_size * sizeof(double));
-                    std::memcpy(result.s_next_ohlcv[ticker].data() + i * ohlcv_size,
-                               raw_next.ohlcv.data(), ohlcv_size * sizeof(double));
-                    std::memcpy(result.s_next_indicators[ticker].data() + i * ind_size,
-                               raw_next.indicators.data(), ind_size * sizeof(double));
-
-                    if (h > 0) {
+                        // Convert double to float
+                        for (size_t k = 0; k < ohlcv_size; ++k) {
+                            result.s_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
+                            result.s_next_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        }
+                        for (size_t k = 0; k < ind_size; ++k) {
+                            result.s_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
+                            result.s_next_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
+                        }
                         size_t mask_size = time_len;
                         std::memcpy(result.s_mask[ticker].data() + i * mask_size,
                                    raw.mask.data(), mask_size * sizeof(int));
                         std::memcpy(result.s_next_mask[ticker].data() + i * mask_size,
                                    raw_next.mask.data(), mask_size * sizeof(int));
                     }
-                }
 
-                // Macro tickers
-                for (const std::string& ticker : macro_tickers) {
-                    auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
-                    auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
+                    // Macro tickers
+                    for (const std::string& ticker : macro_tickers) {
+                        auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
+                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
 
-                    size_t ohlcv_size = time_len * 5;
-                    size_t ind_size = time_len * n_ind;
+                        size_t ohlcv_size = time_len * 5;
+                        size_t ind_size = time_len * n_ind;
 
-                    std::memcpy(result.macro_ohlcv[ticker].data() + i * ohlcv_size,
-                               raw.ohlcv.data(), ohlcv_size * sizeof(double));
-                    std::memcpy(result.macro_indicators[ticker].data() + i * ind_size,
-                               raw.indicators.data(), ind_size * sizeof(double));
-                    std::memcpy(result.macro_next_ohlcv[ticker].data() + i * ohlcv_size,
-                               raw_next.ohlcv.data(), ohlcv_size * sizeof(double));
-                    std::memcpy(result.macro_next_indicators[ticker].data() + i * ind_size,
-                               raw_next.indicators.data(), ind_size * sizeof(double));
-
-                    if (h > 0) {
+                        for (size_t k = 0; k < ohlcv_size; ++k) {
+                            result.macro_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
+                            result.macro_next_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        }
+                        for (size_t k = 0; k < ind_size; ++k) {
+                            result.macro_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
+                            result.macro_next_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
+                        }
                         size_t mask_size = time_len;
                         std::memcpy(result.macro_mask[ticker].data() + i * mask_size,
                                    raw.mask.data(), mask_size * sizeof(int));
                         std::memcpy(result.macro_next_mask[ticker].data() + i * mask_size,
+                                   raw_next.mask.data(), mask_size * sizeof(int));
+                    }
+                }
+
+                // Future market data - when h=0, future=N: data is in ohlcv/indicators/mask fields
+                if (future_length > 0) {
+                    for (const auto& ticker : t.tickers) {
+                        auto raw = env_->get_market_window_raw(ticker, t.state_day, 0, future_length);
+                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, 0, future_length);
+
+                        size_t ohlcv_size = future_length * 5;
+                        size_t ind_size = future_length * n_ind;
+
+                        for (size_t k = 0; k < ohlcv_size; ++k) {
+                            result.s_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
+                            result.s_next_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        }
+                        for (size_t k = 0; k < ind_size; ++k) {
+                            result.s_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
+                            result.s_next_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
+                        }
+                        size_t mask_size = future_length;
+                        std::memcpy(result.s_future_mask[ticker].data() + i * mask_size,
+                                   raw.mask.data(), mask_size * sizeof(int));
+                        std::memcpy(result.s_next_future_mask[ticker].data() + i * mask_size,
                                    raw_next.mask.data(), mask_size * sizeof(int));
                     }
                 }
@@ -298,17 +346,17 @@ void ReplayBuffer::load(const std::string& path) {
         StoredTransition t;
         t.state_day = tj["state_day"].get<int>();
         t.tickers = tj["tickers"].get<std::vector<std::string>>();
-        t.state_cash = tj["state_cash"].get<double>();
+        t.state_cash = tj["state_cash"].get<float>();
         t.state_shares = tj["state_shares"].get<std::vector<int>>();
-        t.state_avg_buy_price = tj["state_avg_buy_price"].get<std::vector<double>>();
-        t.action = tj["action"].get<std::vector<double>>();
-        t.rewards = tj["rewards"].get<std::vector<double>>();
+        t.state_avg_buy_price = tj["state_avg_buy_price"].get<std::vector<float>>();
+        t.action = tj["action"].get<std::vector<float>>();
+        t.rewards = tj["rewards"].get<std::vector<float>>();
         t.done = tj["done"].get<bool>();
         t.terminal = tj["terminal"].get<bool>();
         t.next_state_day = tj["next_state_day"].get<int>();
-        t.next_state_cash = tj["next_state_cash"].get<double>();
+        t.next_state_cash = tj["next_state_cash"].get<float>();
         t.next_state_shares = tj["next_state_shares"].get<std::vector<int>>();
-        t.next_state_avg_buy_price = tj["next_state_avg_buy_price"].get<std::vector<double>>();
+        t.next_state_avg_buy_price = tj["next_state_avg_buy_price"].get<std::vector<float>>();
         buffer_.push_back(t);
     }
 }

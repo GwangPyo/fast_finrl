@@ -75,6 +75,9 @@ public:
     const vector<vector<string>>& get_tickers() const { return tickers_; }
     shared_ptr<const FastFinRL> get_base_env() const { return base_env_; }
 
+    // Get current state for all environments as list of JSON
+    vector<nlohmann::json> get_state() const;
+
     // Configuration (read-only after construction)
     const FastFinRLConfig& config() const { return config_; }
     bool auto_reset() const { return auto_reset_; }
