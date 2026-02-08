@@ -58,6 +58,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Constructor with keyword arguments only
         .def(py::init([](const std::string& csv_path,
                          double initial_amount,
+                         double failure_threshold,
                          int hmax,
                          double buy_cost_pct,
                          double sell_cost_pct,
@@ -72,6 +73,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          bool shuffle_tickers) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
+            config.failure_threshold = failure_threshold;
             config.hmax = hmax;
             config.buy_cost_pct = buy_cost_pct;
             config.sell_cost_pct = sell_cost_pct;
@@ -88,6 +90,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }),
              py::arg("csv_path"),
              py::arg("initial_amount") = 30000.0,
+             py::arg("failure_threshold") = 25000.0,
              py::arg("hmax") = 15,
              py::arg("buy_cost_pct") = 0.01,
              py::arg("sell_cost_pct") = 0.01,
@@ -105,6 +108,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Public attributes (read-write)
         .def_readwrite("initial_amount", &fast_finrl::FastFinRL::initial_amount,
                        "Initial cash amount")
+        .def_readwrite("failure_threshold", &fast_finrl::FastFinRL::failure_threshold,
+                       "Asset threshold for episode termination")
         .def_readwrite("hmax", &fast_finrl::FastFinRL::hmax,
                        "Maximum shares per trade")
         .def_readwrite("buy_cost_pct", &fast_finrl::FastFinRL::buy_cost_pct,
@@ -1157,6 +1162,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def(py::init([](const std::string& csv_path,
                          int n_envs,
                          double initial_amount,
+                         double failure_threshold,
                          int hmax,
                          double buy_cost_pct,
                          double sell_cost_pct,
@@ -1172,6 +1178,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          bool shuffle_tickers) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
+            config.failure_threshold = failure_threshold;
             config.hmax = hmax;
             config.buy_cost_pct = buy_cost_pct;
             config.sell_cost_pct = sell_cost_pct;
@@ -1189,6 +1196,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("csv_path"),
              py::arg("n_envs"),
              py::arg("initial_amount") = 30000.0,
+             py::arg("failure_threshold") = 25000.0,
              py::arg("hmax") = 15,
              py::arg("buy_cost_pct") = 0.01,
              py::arg("sell_cost_pct") = 0.01,
@@ -1483,6 +1491,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def_property_readonly("initial_amount", [](const fast_finrl::VecFastFinRL& self) -> double {
             return self.get_base_env()->initial_amount;
         }, "Initial cash amount")
+        .def_property_readonly("failure_threshold", [](const fast_finrl::VecFastFinRL& self) -> double {
+            return self.get_base_env()->failure_threshold;
+        }, "Asset threshold for episode termination")
         .def_property_readonly("hmax", [](const fast_finrl::VecFastFinRL& self) -> int {
             return self.get_base_env()->hmax;
         }, "Maximum shares per trade")

@@ -3,17 +3,18 @@ VecFastFinRL
 
 Vectorized multi-environment trading simulator for parallel training.
 
-.. py:class:: fast_finrl_py.VecFastFinRL(csv_path, n_envs, initial_amount=100000, hmax=100, buy_cost_pct=0.001, sell_cost_pct=0.001, stop_loss_tolerance=0.9, bidding='default', stop_loss_calculation='close', initial_seed=0, tech_indicator_list=[], macro_tickers=[], auto_reset=True, return_format='json', num_tickers=0, shuffle_tickers=False)
+.. py:class:: fast_finrl_py.VecFastFinRL(csv_path, n_envs, initial_amount=30000.0, failure_threshold=25000.0, hmax=15, buy_cost_pct=0.01, sell_cost_pct=0.01, stop_loss_tolerance=0.8, bidding='default', stop_loss_calculation='close', initial_seed=0, tech_indicator_list=[], macro_tickers=[], auto_reset=True, return_format='json', num_tickers=0, shuffle_tickers=False)
 
    Create vectorized trading environments.
 
    :param str csv_path: Path to data file (CSV or Parquet, auto-detected by extension)
    :param int n_envs: Number of parallel environments
-   :param float initial_amount: Starting cash per env (default: 100000)
-   :param int hmax: Maximum shares per trade (default: 100)
-   :param float buy_cost_pct: Buy transaction cost percentage (default: 0.001)
-   :param float sell_cost_pct: Sell transaction cost percentage (default: 0.001)
-   :param float stop_loss_tolerance: Stop loss threshold (default: 0.9)
+   :param float initial_amount: Starting cash per env (default: 30000.0)
+   :param float failure_threshold: Episode terminates if total_asset <= this (default: 25000.0)
+   :param int hmax: Maximum shares per trade (default: 15)
+   :param float buy_cost_pct: Buy transaction cost percentage (default: 0.01)
+   :param float sell_cost_pct: Sell transaction cost percentage (default: 0.01)
+   :param float stop_loss_tolerance: Stop loss threshold (default: 0.8)
    :param str bidding: Price execution mode ('default', 'uniform', 'adv_uniform')
    :param str stop_loss_calculation: Stop loss price source ('close', 'open')
    :param int initial_seed: Base random seed

@@ -25,6 +25,7 @@ enum class ReturnFormat {
 // Configuration struct for FastFinRL constructor
 struct FastFinRLConfig {
     double initial_amount = 30000.0;
+    double failure_threshold = 25000.0;  // done if total_asset <= this
     int hmax = 15;
     double buy_cost_pct = 0.01;
     double sell_cost_pct = 0.01;
@@ -46,6 +47,7 @@ public:
 
     // Configuration attributes (public, set directly like Python)
     double initial_amount;
+    double failure_threshold;
     int hmax;
     double buy_cost_pct;
     double sell_cost_pct;

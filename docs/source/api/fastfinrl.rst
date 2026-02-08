@@ -3,16 +3,17 @@ FastFinRL
 
 Single-environment trading simulator.
 
-.. py:class:: fast_finrl_py.FastFinRL(csv_path, initial_amount=100000, hmax=100, buy_cost_pct=0.001, sell_cost_pct=0.001, stop_loss_tolerance=0.9, bidding='default', stop_loss_calculation='close', tech_indicator_list=[], macro_tickers=[], return_format='json')
+.. py:class:: fast_finrl_py.FastFinRL(csv_path, initial_amount=30000.0, failure_threshold=25000.0, hmax=15, buy_cost_pct=0.01, sell_cost_pct=0.01, stop_loss_tolerance=0.8, bidding='default', stop_loss_calculation='close', tech_indicator_list=[], macro_tickers=[], return_format='json')
 
    Create a single trading environment.
 
    :param str csv_path: Path to data file (CSV or Parquet, auto-detected by extension)
-   :param float initial_amount: Starting cash (default: 100000)
-   :param int hmax: Maximum shares per trade (default: 100)
-   :param float buy_cost_pct: Buy transaction cost percentage (default: 0.001)
-   :param float sell_cost_pct: Sell transaction cost percentage (default: 0.001)
-   :param float stop_loss_tolerance: Stop loss threshold (default: 0.9)
+   :param float initial_amount: Starting cash (default: 30000.0)
+   :param float failure_threshold: Episode terminates if total_asset <= this (default: 25000.0)
+   :param int hmax: Maximum shares per trade (default: 15)
+   :param float buy_cost_pct: Buy transaction cost percentage (default: 0.01)
+   :param float sell_cost_pct: Sell transaction cost percentage (default: 0.01)
+   :param float stop_loss_tolerance: Stop loss threshold (default: 0.8)
    :param str bidding: Price execution mode ('default', 'uniform', 'adv_uniform')
    :param str stop_loss_calculation: Stop loss price source ('close', 'open')
    :param list tech_indicator_list: Technical indicators to include

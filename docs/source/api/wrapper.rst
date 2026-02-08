@@ -3,7 +3,7 @@ VecFinRLWrapper
 
 Gymnasium-compatible wrapper for VecFastFinRL with integrated replay buffer.
 
-.. py:class:: VecFinRLWrapper(path, buffer_capacity, history_length=20, auto_add=True, batch_size=256, n_envs=4, initial_amount=30000.0, hmax=15, buy_cost_pct=0.01, sell_cost_pct=0.01, stop_loss_tolerance=0.8, bidding='adv_uniform', stop_loss_calculation='close', initial_seed=0, tech_indicator_list=[], macro_tickers=[], auto_reset=True, num_tickers=0, shuffle_tickers=True)
+.. py:class:: VecFinRLWrapper(path, buffer_capacity, history_length=20, auto_add=True, batch_size=256, n_envs=4, initial_amount=30000.0, failure_threshold=25000.0, hmax=15, buy_cost_pct=0.01, sell_cost_pct=0.01, stop_loss_tolerance=0.8, bidding='adv_uniform', stop_loss_calculation='close', initial_seed=0, tech_indicator_list=[], macro_tickers=[], auto_reset=True, num_tickers=0, shuffle_tickers=True)
 
    Create a Gymnasium-compatible wrapper for vectorized trading environment.
 
@@ -14,6 +14,7 @@ Gymnasium-compatible wrapper for VecFastFinRL with integrated replay buffer.
    :param int batch_size: Default buffer sample batch size (default: 256)
    :param int n_envs: Number of parallel environments (default: 4)
    :param float initial_amount: Initial cash amount (default: 30000.0)
+   :param float failure_threshold: Episode terminates if total_asset <= this (default: 25000.0)
    :param int hmax: Maximum shares per trade (default: 15)
    :param float buy_cost_pct: Buy transaction cost percentage (default: 0.01)
    :param float sell_cost_pct: Sell transaction cost percentage (default: 0.01)
@@ -76,10 +77,17 @@ Observation Structure
    obs['tics']                    # [n_envs, n_tickers] - Tokenized ticker IDs
    obs['macro_tics']              # [n_envs, n_macro] - Tokenized macro ticker IDs
 
-   obs['hist']['past']['ohlcvs']     # [n_envs, n_tickers, H, 5] - History OHLCV
-   obs['hist']['past']['indicators'] # [n_envs, n_tickers, H, n_ind] - History indicators
-   obs['hist']['past']['masks']      # [n_envs, n_tickers, H] - History validity masks
-   obs['hist']['past']['tickers']    # [n_envs, n_tickers] - Tokenized tickers
+   # Market history
+   obs['hist']['market']['ohlcvs']     # [n_envs, n_tickers, H, 5] - History OHLCV
+   obs['hist']['market']['indicators'] # [n_envs, n_tickers, H, n_ind] - History indicators
+   obs['hist']['market']['masks']      # [n_envs, n_tickers, H] - History validity masks
+   obs['hist']['market']['tickers']    # [n_envs, n_tickers] - Tokenized tickers
+
+   # Macro history
+   obs['hist']['macro']['ohlcvs']      # [n_envs, n_macro, H, 5] - Macro history OHLCV
+   obs['hist']['macro']['indicators']  # [n_envs, n_macro, H, n_ind] - Macro history indicators
+   obs['hist']['macro']['masks']       # [n_envs, n_macro, H] - Macro history validity masks
+   obs['hist']['macro']['tickers']     # [n_envs, n_macro] - Tokenized macro tickers
 
 sample_buffer() Return Format
 -----------------------------
@@ -106,10 +114,17 @@ sample_buffer() Return Format
    obs['tics']                    # [B, n_tickers] - Tokenized tickers
    obs['macro_tics']              # [B, n_macro] - Tokenized macro tickers
 
-   obs['hist']['past']['ohlcvs']     # [B, n_tickers, H, 5]
-   obs['hist']['past']['indicators'] # [B, n_tickers, H, n_ind]
-   obs['hist']['past']['masks']      # [B, n_tickers, H]
-   obs['hist']['past']['tickers']    # [B, n_tickers]
+   # Market history
+   obs['hist']['market']['ohlcvs']     # [B, n_tickers, H, 5]
+   obs['hist']['market']['indicators'] # [B, n_tickers, H, n_ind]
+   obs['hist']['market']['masks']      # [B, n_tickers, H]
+   obs['hist']['market']['tickers']    # [B, n_tickers]
+
+   # Macro history
+   obs['hist']['macro']['ohlcvs']      # [B, n_macro, H, 5]
+   obs['hist']['macro']['indicators']  # [B, n_macro, H, n_ind]
+   obs['hist']['macro']['masks']       # [B, n_macro, H]
+   obs['hist']['macro']['tickers']     # [B, n_macro]
 
    # Future (only if future_length > 0)
    obs['future']['market']['ohlcvs']     # [B, n_tickers, F, 5]

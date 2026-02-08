@@ -10,6 +10,7 @@ namespace fast_finrl {
 
 FastFinRL::FastFinRL(const string& csv_path, const FastFinRLConfig& config)
     : initial_amount(config.initial_amount)
+    , failure_threshold(config.failure_threshold)
     , hmax(config.hmax)
     , buy_cost_pct(config.buy_cost_pct)
     , sell_cost_pct(config.sell_cost_pct)
@@ -527,7 +528,7 @@ nlohmann::json FastFinRL::step(const vector<double>& actions) {
 
     // 11. Check terminal conditions
     bool terminal = (day_ >= max_day_ - 1);
-    bool done = (end_total_asset <= 25000.0) || terminal;
+    bool done = (end_total_asset <= failure_threshold) || terminal;
 
     // 12. Build and return state
     return state_serializer_->serialize(build_state_data(true, reward, done, terminal), true);
