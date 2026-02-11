@@ -243,22 +243,7 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
     int min_start_day = 0;
     for (int t = 0; t < n_tickers_; ++t) {
         const string& tic = tickers_[env_idx][t];
-        // Get first available day for this ticker via base_env
-        // For now, use day 0 as fallback; proper implementation needs exposed ticker_first_day_
-        int first_day = 0;
-        try {
-            // Try to get data from day 0 - if it fails, ticker starts later
-            base_env_->get_raw_value(tic, 0, "close");
-        } catch (...) {
-            // Ticker not available at day 0, find first available
-            for (int d = 1; d < max_day_; ++d) {
-                try {
-                    base_env_->get_raw_value(tic, d, "close");
-                    first_day = d;
-                    break;
-                } catch (...) {}
-            }
-        }
+        int first_day = base_env_->get_ticker_first_day(tic);
         if (first_day > min_start_day) {
             min_start_day = first_day;
         }
@@ -266,18 +251,7 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
 
     // Also consider macro tickers
     for (const string& tic : base_env_->get_macro_tickers()) {
-        int first_day = 0;
-        try {
-            base_env_->get_raw_value(tic, 0, "close");
-        } catch (...) {
-            for (int d = 1; d < max_day_; ++d) {
-                try {
-                    base_env_->get_raw_value(tic, d, "close");
-                    first_day = d;
-                    break;
-                } catch (...) {}
-            }
-        }
+        int first_day = base_env_->get_ticker_first_day(tic);
         if (first_day > min_start_day) {
             min_start_day = first_day;
         }

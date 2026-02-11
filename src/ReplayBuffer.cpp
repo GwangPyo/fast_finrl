@@ -74,6 +74,9 @@ std::vector<size_t> ReplayBuffer::sample_indices(size_t batch_size, int history_
         throw std::runtime_error("Cannot sample from empty buffer");
     }
 
+    // Get macro tickers for first_day check
+    const std::vector<std::string>& macro_tickers = env_->get_macro_tickers();
+
     // Build list of valid indices
     // For each transition, check if state_day >= max(first_day of tickers) + history_length
     std::vector<size_t> valid_indices;
@@ -83,6 +86,11 @@ std::vector<size_t> ReplayBuffer::sample_indices(size_t batch_size, int history_
         // Find max first_day among this transition's tickers
         int max_first_day = 0;
         for (const auto& tic : t.tickers) {
+            int first_day = env_->get_ticker_first_day(tic);
+            max_first_day = std::max(max_first_day, first_day);
+        }
+        // Also check macro_tickers' first_day
+        for (const auto& tic : macro_tickers) {
             int first_day = env_->get_ticker_first_day(tic);
             max_first_day = std::max(max_first_day, first_day);
         }

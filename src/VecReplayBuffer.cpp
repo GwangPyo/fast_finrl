@@ -129,6 +129,11 @@ std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size, int histo
             int first_day = env_->get_ticker_first_day(tic);
             max_first_day = std::max(max_first_day, first_day);
         }
+        // Also check macro_tickers' first_day
+        for (const auto& tic : cached_macro_tickers_) {
+            int first_day = env_->get_ticker_first_day(tic);
+            max_first_day = std::max(max_first_day, first_day);
+        }
         int min_day = max_first_day + history_length;
         if (t.state_day >= min_day) {
             valid_indices.push_back(i);
