@@ -18,6 +18,7 @@ ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity
 {
     // Reserve up to 1M, larger buffers grow dynamically
     buffer_.reserve(std::min(capacity_, size_t(1000000)));
+    std::mt19937 gen(seed); // fix seed
 
     // Default action_shape = (n_tickers,)
     if (action_shape_.empty() && env_) {
