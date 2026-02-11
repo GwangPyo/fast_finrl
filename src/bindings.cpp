@@ -671,7 +671,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                                action, rewards, done, false);
         }, py::arg("state"), py::arg("action"), py::arg("reward"), py::arg("next_state"), py::arg("done"),
            "Add transition: (state, action, reward, next_state, done). Auto-detects json/vec format")
-        .def("sample_indices", &fast_finrl::ReplayBuffer::sample_indices, py::arg("batch_size"),
+        .def("sample_indices", static_cast<std::vector<size_t> (fast_finrl::ReplayBuffer::*)(size_t) const>(&fast_finrl::ReplayBuffer::sample_indices), py::arg("batch_size"),
              "Sample random indices from buffer")
         .def("sample", [](const fast_finrl::ReplayBuffer& self,
                          std::optional<size_t> batch_size,
@@ -2081,7 +2081,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         }, py::arg("batch_size") = py::none(), py::arg("history_length") = 0, py::arg("future_length") = 0,
            "Sample batch with env_ids. h=0: no history, f=0: no future")
 
-        .def("sample_indices", &fast_finrl::VecReplayBuffer::sample_indices, py::arg("batch_size"),
+        .def("sample_indices", static_cast<std::vector<size_t> (fast_finrl::VecReplayBuffer::*)(size_t) const>(&fast_finrl::VecReplayBuffer::sample_indices), py::arg("batch_size"),
              "Sample random indices from buffer")
         .def("get", &fast_finrl::VecReplayBuffer::get, py::arg("index"),
              py::return_value_policy::reference_internal,

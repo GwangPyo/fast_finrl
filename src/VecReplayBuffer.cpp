@@ -108,17 +108,43 @@ void VecReplayBuffer::add_batch(
 }
 
 std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size) const {
+    return sample_indices(batch_size, 0);
+}
+
+std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size, int history_length) const {
     size_t current_size = size();
     if (current_size == 0) {
         throw std::runtime_error("Cannot sample from empty buffer");
     }
 
-    batch_size = std::min(batch_size, current_size);
+    // Build list of valid indices
+    // For each transition, check if state_day >= max(first_day of tickers) + history_length
+    std::vector<size_t> valid_indices;
+    valid_indices.reserve(current_size);
+    for (size_t i = 0; i < current_size; ++i) {
+        const auto& t = buffer_[i];
+        // Find max first_day among this transition's tickers
+        int max_first_day = 0;
+        for (const auto& tic : t.tickers) {
+            int first_day = env_->get_ticker_first_day(tic);
+            max_first_day = std::max(max_first_day, first_day);
+        }
+        int min_day = max_first_day + history_length;
+        if (t.state_day >= min_day) {
+            valid_indices.push_back(i);
+        }
+    }
+
+    if (valid_indices.empty()) {
+        throw std::runtime_error("No valid samples with sufficient history (h=" + std::to_string(history_length) + ")");
+    }
+
+    batch_size = std::min(batch_size, valid_indices.size());
     std::vector<size_t> indices(batch_size);
-    std::uniform_int_distribution<size_t> dist(0, current_size - 1);
+    std::uniform_int_distribution<size_t> dist(0, valid_indices.size() - 1);
 
     for (size_t i = 0; i < batch_size; ++i) {
-        indices[i] = dist(rng_);
+        indices[i] = valid_indices[dist(rng_)];
     }
 
     return indices;
@@ -144,7 +170,7 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int history_length) const {
 }
 
 VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int history_length, int future_length) const {
-    auto indices = sample_indices(batch_size);
+    auto indices = sample_indices(batch_size, history_length);
     const size_t actual_batch = indices.size();
 
     SampleBatch result;

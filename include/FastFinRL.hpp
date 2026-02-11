@@ -152,6 +152,18 @@ public:
         return it->second;
     }
 
+    // Get minimum valid day for sampling (max first_day across all active tickers + min_history)
+    int get_min_valid_day(int min_history = 5) const {
+        int max_first_day = 0;
+        for (const auto& tic : active_tickers_) {
+            auto it = ticker_first_day_.find(tic);
+            if (it != ticker_first_day_.end()) {
+                max_first_day = max(max_first_day, it->second);
+            }
+        }
+        return max_first_day + min_history;
+    }
+
     int get_n_indicators() const { return static_cast<int>(indicator_cols_.size()); }
 
 private:

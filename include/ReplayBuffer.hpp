@@ -62,7 +62,9 @@ public:
     );
 
     // Sample random indices
+    // min_day: only sample transitions with state_day >= min_day (default 0 = no filter)
     std::vector<size_t> sample_indices(size_t batch_size) const;
+    std::vector<size_t> sample_indices(size_t batch_size, int min_day) const;
 
     // Get transition by index
     const StoredTransition& get(size_t index) const;
