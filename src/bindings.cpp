@@ -1824,7 +1824,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
            py::arg("next_states"), py::arg("dones"),
            "Add batch of transitions. Auto-detects format: dict=vec format, list=object list")
 
-        // sample - same interface as ReplayBuffer
+        // sample - returns flat arrays [B, n_tickers, T, ...] instead of per-ticker dicts
         .def("sample", [](const fast_finrl::VecReplayBuffer& self,
                          std::optional<size_t> batch_size,
                          int history_length,
@@ -1841,6 +1841,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const int F = future_length;
             const int n_ind = holder->n_indicators;
             const int n_tic = holder->n_tickers;
+            const int n_macro = holder->n_macro_tickers;
 
             auto make_capsule = [holder]() {
                 return py::capsule(new std::shared_ptr<Batch>(holder),
@@ -1848,170 +1849,144 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             };
 
             py::dict s_dict, s_next_dict;
-            py::object s_mask_dict = py::none();
-            py::object s_next_mask_dict = py::none();
 
+            // Market data: [B, n_tickers, T, 5] etc
             if (h > 0) {
-                s_mask_dict = py::dict();
-                s_next_mask_dict = py::dict();
+                s_dict["ohlcv"] = py::array_t<float>(
+                    {B, n_tic, T, 5},
+                    {n_tic * T * 5 * (py::ssize_t)sizeof(float), T * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_ohlcv.data(), make_capsule());
+                s_dict["indicators"] = py::array_t<float>(
+                    {B, n_tic, T, n_ind},
+                    {n_tic * T * n_ind * (py::ssize_t)sizeof(float), T * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_indicators.data(), make_capsule());
+                s_dict["mask"] = py::array_t<int>(
+                    {B, n_tic, T},
+                    {n_tic * T * (py::ssize_t)sizeof(int), T * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                    holder->s_mask.data(), make_capsule());
+
+                s_next_dict["ohlcv"] = py::array_t<float>(
+                    {B, n_tic, T, 5},
+                    {n_tic * T * 5 * (py::ssize_t)sizeof(float), T * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_next_ohlcv.data(), make_capsule());
+                s_next_dict["indicators"] = py::array_t<float>(
+                    {B, n_tic, T, n_ind},
+                    {n_tic * T * n_ind * (py::ssize_t)sizeof(float), T * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_next_indicators.data(), make_capsule());
+                s_next_dict["mask"] = py::array_t<int>(
+                    {B, n_tic, T},
+                    {n_tic * T * (py::ssize_t)sizeof(int), T * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                    holder->s_next_mask.data(), make_capsule());
+
+                // Macro: [B, n_macro, T, ...]
+                if (n_macro > 0) {
+                    py::dict macro_dict, macro_next_dict;
+                    macro_dict["ohlcv"] = py::array_t<float>(
+                        {B, n_macro, T, 5},
+                        {n_macro * T * 5 * (py::ssize_t)sizeof(float), T * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_ohlcv.data(), make_capsule());
+                    macro_dict["indicators"] = py::array_t<float>(
+                        {B, n_macro, T, n_ind},
+                        {n_macro * T * n_ind * (py::ssize_t)sizeof(float), T * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_indicators.data(), make_capsule());
+                    macro_dict["mask"] = py::array_t<int>(
+                        {B, n_macro, T},
+                        {n_macro * T * (py::ssize_t)sizeof(int), T * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                        holder->macro_mask.data(), make_capsule());
+
+                    macro_next_dict["ohlcv"] = py::array_t<float>(
+                        {B, n_macro, T, 5},
+                        {n_macro * T * 5 * (py::ssize_t)sizeof(float), T * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_next_ohlcv.data(), make_capsule());
+                    macro_next_dict["indicators"] = py::array_t<float>(
+                        {B, n_macro, T, n_ind},
+                        {n_macro * T * n_ind * (py::ssize_t)sizeof(float), T * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_next_indicators.data(), make_capsule());
+                    macro_next_dict["mask"] = py::array_t<int>(
+                        {B, n_macro, T},
+                        {n_macro * T * (py::ssize_t)sizeof(int), T * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                        holder->macro_next_mask.data(), make_capsule());
+
+                    s_dict["macro"] = macro_dict;
+                    s_next_dict["macro"] = macro_next_dict;
+                }
             }
 
-            // Build per-ticker data (iterate over unique_tickers)
-            for (const auto& ticker : holder->unique_tickers) {
-                py::dict td, td_next;
+            // Future data: [B, n_tickers, F, ...]
+            if (F > 0) {
+                s_dict["future_ohlcv"] = py::array_t<float>(
+                    {B, n_tic, F, 5},
+                    {n_tic * F * 5 * (py::ssize_t)sizeof(float), F * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_future_ohlcv.data(), make_capsule());
+                s_dict["future_indicators"] = py::array_t<float>(
+                    {B, n_tic, F, n_ind},
+                    {n_tic * F * n_ind * (py::ssize_t)sizeof(float), F * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_future_indicators.data(), make_capsule());
+                s_dict["future_mask"] = py::array_t<int>(
+                    {B, n_tic, F},
+                    {n_tic * F * (py::ssize_t)sizeof(int), F * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                    holder->s_future_mask.data(), make_capsule());
 
-                if (h > 0) {
-                    td["ohlcv"] = py::array_t<float>(
-                        {B, T, 5},
-                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->s_ohlcv[ticker].data(), make_capsule());
+                s_next_dict["future_ohlcv"] = py::array_t<float>(
+                    {B, n_tic, F, 5},
+                    {n_tic * F * 5 * (py::ssize_t)sizeof(float), F * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_next_future_ohlcv.data(), make_capsule());
+                s_next_dict["future_indicators"] = py::array_t<float>(
+                    {B, n_tic, F, n_ind},
+                    {n_tic * F * n_ind * (py::ssize_t)sizeof(float), F * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                    holder->s_next_future_indicators.data(), make_capsule());
+                s_next_dict["future_mask"] = py::array_t<int>(
+                    {B, n_tic, F},
+                    {n_tic * F * (py::ssize_t)sizeof(int), F * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                    holder->s_next_future_mask.data(), make_capsule());
 
-                    td["indicators"] = py::array_t<float>(
-                        {B, T, n_ind},
-                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->s_indicators[ticker].data(), make_capsule());
+                // Macro future - s_dict["macro"] is already a py::dict, modifications are in-place
+                if (n_macro > 0) {
+                    py::dict macro_dict = s_dict["macro"].cast<py::dict>();
+                    py::dict macro_next_dict = s_next_dict["macro"].cast<py::dict>();
 
-                    td_next["ohlcv"] = py::array_t<float>(
-                        {B, T, 5},
-                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->s_next_ohlcv[ticker].data(), make_capsule());
+                    macro_dict["future_ohlcv"] = py::array_t<float>(
+                        {B, n_macro, F, 5},
+                        {n_macro * F * 5 * (py::ssize_t)sizeof(float), F * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_future_ohlcv.data(), make_capsule());
+                    macro_dict["future_indicators"] = py::array_t<float>(
+                        {B, n_macro, F, n_ind},
+                        {n_macro * F * n_ind * (py::ssize_t)sizeof(float), F * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_future_indicators.data(), make_capsule());
+                    macro_dict["future_mask"] = py::array_t<int>(
+                        {B, n_macro, F},
+                        {n_macro * F * (py::ssize_t)sizeof(int), F * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                        holder->macro_future_mask.data(), make_capsule());
 
-                    td_next["indicators"] = py::array_t<float>(
-                        {B, T, n_ind},
-                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->s_next_indicators[ticker].data(), make_capsule());
-
-                    py::cast<py::dict>(s_mask_dict)[py::str(ticker)] = py::array_t<int>(
-                        {B, T}, {T * sizeof(int), sizeof(int)},
-                        holder->s_mask[ticker].data(), make_capsule());
-                    py::cast<py::dict>(s_next_mask_dict)[py::str(ticker)] = py::array_t<int>(
-                        {B, T}, {T * sizeof(int), sizeof(int)},
-                        holder->s_next_mask[ticker].data(), make_capsule());
+                    macro_next_dict["future_ohlcv"] = py::array_t<float>(
+                        {B, n_macro, F, 5},
+                        {n_macro * F * 5 * (py::ssize_t)sizeof(float), F * 5 * (py::ssize_t)sizeof(float), 5 * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_next_future_ohlcv.data(), make_capsule());
+                    macro_next_dict["future_indicators"] = py::array_t<float>(
+                        {B, n_macro, F, n_ind},
+                        {n_macro * F * n_ind * (py::ssize_t)sizeof(float), F * n_ind * (py::ssize_t)sizeof(float), n_ind * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
+                        holder->macro_next_future_indicators.data(), make_capsule());
+                    macro_next_dict["future_mask"] = py::array_t<int>(
+                        {B, n_macro, F},
+                        {n_macro * F * (py::ssize_t)sizeof(int), F * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
+                        holder->macro_next_future_mask.data(), make_capsule());
                 }
-
-                // Future data
-                if (F > 0) {
-                    td["future_ohlcv"] = py::array_t<float>(
-                        {B, F, 5},
-                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->s_future_ohlcv[ticker].data(), make_capsule());
-
-                    td["future_indicators"] = py::array_t<float>(
-                        {B, F, n_ind},
-                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->s_future_indicators[ticker].data(), make_capsule());
-
-                    td["future_mask"] = py::array_t<int>(
-                        {B, F}, {F * sizeof(int), sizeof(int)},
-                        holder->s_future_mask[ticker].data(), make_capsule());
-
-                    td_next["future_ohlcv"] = py::array_t<float>(
-                        {B, F, 5},
-                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->s_next_future_ohlcv[ticker].data(), make_capsule());
-
-                    td_next["future_indicators"] = py::array_t<float>(
-                        {B, F, n_ind},
-                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->s_next_future_indicators[ticker].data(), make_capsule());
-
-                    td_next["future_mask"] = py::array_t<int>(
-                        {B, F}, {F * sizeof(int), sizeof(int)},
-                        holder->s_next_future_mask[ticker].data(), make_capsule());
-                }
-
-                s_dict[py::str(ticker)] = td;
-                s_next_dict[py::str(ticker)] = td_next;
-            }
-
-            // Macro tickers
-            py::dict macro_dict, macro_next_dict;
-            py::dict macro_mask_dict, macro_next_mask_dict;
-
-            for (const std::string& ticker : holder->macro_tickers) {
-                py::dict td, td_next;
-
-                if (h > 0) {
-                    td["ohlcv"] = py::array_t<float>(
-                        {B, T, 5},
-                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->macro_ohlcv[ticker].data(), make_capsule());
-
-                    td["indicators"] = py::array_t<float>(
-                        {B, T, n_ind},
-                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->macro_indicators[ticker].data(), make_capsule());
-
-                    td_next["ohlcv"] = py::array_t<float>(
-                        {B, T, 5},
-                        {T * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->macro_next_ohlcv[ticker].data(), make_capsule());
-
-                    td_next["indicators"] = py::array_t<float>(
-                        {B, T, n_ind},
-                        {T * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->macro_next_indicators[ticker].data(), make_capsule());
-
-                    macro_mask_dict[py::str(ticker)] = py::array_t<int>(
-                        {B, T}, {T * sizeof(int), sizeof(int)},
-                        holder->macro_mask[ticker].data(), make_capsule());
-                    macro_next_mask_dict[py::str(ticker)] = py::array_t<int>(
-                        {B, T}, {T * sizeof(int), sizeof(int)},
-                        holder->macro_next_mask[ticker].data(), make_capsule());
-                }
-
-                if (F > 0) {
-                    td["future_ohlcv"] = py::array_t<float>(
-                        {B, F, 5},
-                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->macro_future_ohlcv[ticker].data(), make_capsule());
-
-                    td["future_indicators"] = py::array_t<float>(
-                        {B, F, n_ind},
-                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->macro_future_indicators[ticker].data(), make_capsule());
-
-                    td["future_mask"] = py::array_t<int>(
-                        {B, F}, {F * sizeof(int), sizeof(int)},
-                        holder->macro_future_mask[ticker].data(), make_capsule());
-
-                    td_next["future_ohlcv"] = py::array_t<float>(
-                        {B, F, 5},
-                        {F * 5 * sizeof(float), 5 * sizeof(float), sizeof(float)},
-                        holder->macro_next_future_ohlcv[ticker].data(), make_capsule());
-
-                    td_next["future_indicators"] = py::array_t<float>(
-                        {B, F, n_ind},
-                        {F * n_ind * sizeof(float), n_ind * sizeof(float), sizeof(float)},
-                        holder->macro_next_future_indicators[ticker].data(), make_capsule());
-
-                    td_next["future_mask"] = py::array_t<int>(
-                        {B, F}, {F * sizeof(int), sizeof(int)},
-                        holder->macro_next_future_mask[ticker].data(), make_capsule());
-                }
-
-                macro_dict[py::str(ticker)] = td;
-                macro_next_dict[py::str(ticker)] = td_next;
             }
 
             // env_ids [B]
             py::array_t<int> env_ids({B}, {sizeof(int)});
             std::copy(holder->env_ids.begin(), holder->env_ids.end(), env_ids.mutable_data());
 
-            // Build action shape for numpy array
-            std::vector<py::ssize_t> action_dims = {B};
+            // Actions - use xtensor data
+            std::vector<py::ssize_t> action_dims;
+            for (size_t dim : holder->actions.shape()) action_dims.push_back(static_cast<py::ssize_t>(dim));
             std::vector<py::ssize_t> action_strides;
-            size_t action_flat_size = 1;
-            for (size_t dim : holder->action_shape) action_flat_size *= dim;
-            for (size_t dim : holder->action_shape) action_dims.push_back(static_cast<py::ssize_t>(dim));
-
             py::ssize_t stride = sizeof(float);
             action_strides.resize(action_dims.size());
             for (int i = static_cast<int>(action_dims.size()) - 1; i >= 0; --i) {
                 action_strides[i] = stride;
                 stride *= action_dims[i];
             }
-
             py::array_t<float> actions(action_dims, action_strides,
                 holder->actions.data(), make_capsule());
 
@@ -2032,18 +2007,18 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 dones_ptr[i] = holder->dones[i];
             }
 
-            // Portfolio state
+            // Portfolio state - use xtensor data
             py::array_t<float> state_cash({B}, {sizeof(float)},
                 holder->state_cash.data(), make_capsule());
             py::array_t<float> next_state_cash({B}, {sizeof(float)},
                 holder->next_state_cash.data(), make_capsule());
-            py::array_t<int> state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
+            py::array_t<int> state_shares({B, n_tic}, {n_tic * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
                 holder->state_shares.data(), make_capsule());
-            py::array_t<int> next_state_shares({B, n_tic}, {n_tic * sizeof(int), sizeof(int)},
+            py::array_t<int> next_state_shares({B, n_tic}, {n_tic * (py::ssize_t)sizeof(int), (py::ssize_t)sizeof(int)},
                 holder->next_state_shares.data(), make_capsule());
-            py::array_t<float> state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
+            py::array_t<float> state_avg({B, n_tic}, {n_tic * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
                 holder->state_avg_buy_price.data(), make_capsule());
-            py::array_t<float> next_state_avg({B, n_tic}, {n_tic * sizeof(float), sizeof(float)},
+            py::array_t<float> next_state_avg({B, n_tic}, {n_tic * (py::ssize_t)sizeof(float), (py::ssize_t)sizeof(float)},
                 holder->next_state_avg_buy_price.data(), make_capsule());
 
             // Build portfolio dicts
@@ -2058,28 +2033,19 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             // Metadata
             s_dict["indicator_names"] = holder->indicator_names;
             s_dict["tickers"] = holder->tickers;
-            s_dict["unique_tickers"] = holder->unique_tickers;
             s_dict["portfolio"] = portfolio;
-            s_dict["macro"] = macro_dict;
             s_dict["macro_tickers"] = holder->macro_tickers;
             s_dict["env_ids"] = env_ids;
             s_dict["action_shape"] = holder->action_shape;
 
             s_next_dict["indicator_names"] = holder->indicator_names;
             s_next_dict["tickers"] = holder->tickers;
-            s_next_dict["unique_tickers"] = holder->unique_tickers;
             s_next_dict["portfolio"] = next_portfolio;
-            s_next_dict["macro"] = macro_next_dict;
             s_next_dict["macro_tickers"] = holder->macro_tickers;
 
-            if (h > 0 && holder->n_macro_tickers > 0) {
-                py::cast<py::dict>(s_mask_dict)["macro"] = macro_mask_dict;
-                py::cast<py::dict>(s_next_mask_dict)["macro"] = macro_next_mask_dict;
-            }
-
-            return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones, s_mask_dict, s_next_mask_dict);
+            return py::make_tuple(s_dict, actions, rewards, s_next_dict, dones);
         }, py::arg("batch_size") = py::none(), py::arg("history_length") = 0, py::arg("future_length") = 0,
-           "Sample batch with env_ids. h=0: no history, f=0: no future")
+           "Sample batch. Returns (s, action, reward, s_next, done). s['ohlcv']=[B,n_tic,T,5], s['macro']['ohlcv']=[B,n_macro,T,5]")
 
         .def("sample_indices", static_cast<std::vector<size_t> (fast_finrl::VecReplayBuffer::*)(size_t) const>(&fast_finrl::VecReplayBuffer::sample_indices), py::arg("batch_size"),
              "Sample random indices from buffer")

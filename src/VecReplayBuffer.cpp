@@ -112,44 +112,16 @@ std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size) const {
 }
 
 std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size, int history_length) const {
+    (void)history_length;  // env already validated data availability
+
     size_t current_size = size();
-    if (current_size == 0) {
-        throw std::runtime_error("Cannot sample from empty buffer");
-    }
+    batch_size = std::min(batch_size, current_size);
 
-    // Build list of valid indices
-    // For each transition, check if state_day >= max(first_day of tickers) + history_length
-    std::vector<size_t> valid_indices;
-    valid_indices.reserve(current_size);
-    for (size_t i = 0; i < current_size; ++i) {
-        const auto& t = buffer_[i];
-        // Find max first_day among this transition's tickers
-        int max_first_day = 0;
-        for (const auto& tic : t.tickers) {
-            int first_day = env_->get_ticker_first_day(tic);
-            max_first_day = std::max(max_first_day, first_day);
-        }
-        // Also check macro_tickers' first_day
-        for (const auto& tic : cached_macro_tickers_) {
-            int first_day = env_->get_ticker_first_day(tic);
-            max_first_day = std::max(max_first_day, first_day);
-        }
-        int min_day = max_first_day + history_length;
-        if (t.state_day >= min_day) {
-            valid_indices.push_back(i);
-        }
-    }
-
-    if (valid_indices.empty()) {
-        throw std::runtime_error("No valid samples with sufficient history (h=" + std::to_string(history_length) + ")");
-    }
-
-    batch_size = std::min(batch_size, valid_indices.size());
     std::vector<size_t> indices(batch_size);
-    std::uniform_int_distribution<size_t> dist(0, valid_indices.size() - 1);
+    std::uniform_int_distribution<size_t> dist(0, current_size - 1);
 
     for (size_t i = 0; i < batch_size; ++i) {
-        indices[i] = valid_indices[dist(rng_)];
+        indices[i] = dist(rng_);
     }
 
     return indices;
@@ -176,265 +148,203 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(int history_length) const {
 
 VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int history_length, int future_length) const {
     auto indices = sample_indices(batch_size, history_length);
-    const size_t actual_batch = indices.size();
+    const size_t B = indices.size();
 
     SampleBatch result;
-    result.batch_size = static_cast<int>(actual_batch);
+    result.batch_size = static_cast<int>(B);
     result.history_length = history_length;
     result.future_length = future_length;
     result.action_shape = action_shape_;
 
-    if (actual_batch == 0) return result;
+    if (B == 0) return result;
 
-    // Collect per-sample tickers and build unique ticker set
-    std::set<std::string> unique_ticker_set;
-    result.tickers.resize(actual_batch);
-    for (size_t i = 0; i < actual_batch; ++i) {
-        const auto& t = buffer_[indices[i]];
-        result.tickers[i] = t.tickers;
-        for (const auto& tic : t.tickers) {
-            unique_ticker_set.insert(tic);
-        }
+    // Collect per-sample tickers
+    result.tickers.resize(B);
+    for (size_t i = 0; i < B; ++i) {
+        result.tickers[i] = buffer_[indices[i]].tickers;
     }
-    result.unique_tickers.assign(unique_ticker_set.begin(), unique_ticker_set.end());
 
     // Get structure from first transition
     const auto& first_t = buffer_[indices[0]];
-    result.n_tickers = static_cast<int>(first_t.tickers.size());
-    result.n_objectives = static_cast<int>(first_t.rewards.size());
-
-    // Use cached indicator names (no repeated lookups)
-    result.indicator_names = cached_indicator_names_;
-    result.n_indicators = n_indicators_;
-
-    // Use cached macro tickers
-    result.macro_tickers = cached_macro_tickers_;
-    result.n_macro_tickers = n_macro_tickers_;
-
+    const int n_tic = static_cast<int>(first_t.tickers.size());
+    const int n_macro = n_macro_tickers_;
+    const int n_ind = n_indicators_;
     const int h = history_length;
-    const int time_len = h;  // history only (no current day to prevent lookahead)
-    const int n_tickers = result.n_tickers;
-    const int n_ind = result.n_indicators;
+    const int f = future_length;
 
-    // Compute action flat size from action_shape
-    size_t action_flat_size = 1;
-    for (size_t dim : action_shape_) action_flat_size *= dim;
+    result.n_tickers = n_tic;
+    result.n_objectives = static_cast<int>(first_t.rewards.size());
+    result.indicator_names = cached_indicator_names_;
+    result.n_indicators = n_ind;
+    result.macro_tickers = cached_macro_tickers_;
+    result.n_macro_tickers = n_macro;
 
-    // Pre-allocate all arrays
-    result.env_ids.resize(actual_batch);
-    result.actions.resize(actual_batch * action_flat_size);
-    result.rewards.resize(actual_batch);
-    result.dones.resize(actual_batch);
-    result.state_cash.resize(actual_batch);
-    result.next_state_cash.resize(actual_batch);
-    result.state_shares.resize(actual_batch * n_tickers);
-    result.next_state_shares.resize(actual_batch * n_tickers);
-    result.state_avg_buy_price.resize(actual_batch * n_tickers);
-    result.next_state_avg_buy_price.resize(actual_batch * n_tickers);
+    // Compute action shape
+    std::vector<size_t> action_dims = {B};
+    for (size_t dim : action_shape_) action_dims.push_back(dim);
 
-    // Allocate per-ticker market data (for all unique tickers)
+    // Allocate xtensor arrays
+    result.env_ids.resize(B);
+    result.actions = xt::zeros<float>(action_dims);
+    result.rewards.resize(B);
+    result.dones.resize(B);
+    result.state_cash.resize(B);
+    result.next_state_cash.resize(B);
+    result.state_shares = xt::zeros<int>({B, static_cast<size_t>(n_tic)});
+    result.next_state_shares = xt::zeros<int>({B, static_cast<size_t>(n_tic)});
+    result.state_avg_buy_price = xt::zeros<float>({B, static_cast<size_t>(n_tic)});
+    result.next_state_avg_buy_price = xt::zeros<float>({B, static_cast<size_t>(n_tic)});
+
+    // Allocate market data arrays [B, n_tickers, time, ...]
     if (h > 0) {
-        for (const auto& ticker : result.unique_tickers) {
-            result.s_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.s_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.s_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.s_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.s_mask[ticker].resize(actual_batch * time_len);
-            result.s_next_mask[ticker].resize(actual_batch * time_len);
-        }
+        result.s_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), 5UL});
+        result.s_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+        result.s_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h)});
+        result.s_next_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), 5UL});
+        result.s_next_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+        result.s_next_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h)});
 
-        // Allocate macro ticker data
-        for (const std::string& ticker : cached_macro_tickers_) {
-            result.macro_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.macro_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.macro_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.macro_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.macro_mask[ticker].resize(actual_batch * time_len);
-            result.macro_next_mask[ticker].resize(actual_batch * time_len);
+        // Macro: [B, n_macro, time, ...]
+        if (n_macro > 0) {
+            result.macro_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), 5UL});
+            result.macro_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+            result.macro_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h)});
+            result.macro_next_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), 5UL});
+            result.macro_next_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+            result.macro_next_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h)});
         }
     }
 
-    // Future market data
-    if (future_length > 0) {
-        for (const auto& ticker : result.unique_tickers) {
-            result.s_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.s_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.s_future_mask[ticker].resize(actual_batch * future_length);
-            result.s_next_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.s_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.s_next_future_mask[ticker].resize(actual_batch * future_length);
-        }
-        for (const auto& ticker : cached_macro_tickers_) {
-            result.macro_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.macro_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.macro_future_mask[ticker].resize(actual_batch * future_length);
-            result.macro_next_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.macro_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.macro_next_future_mask[ticker].resize(actual_batch * future_length);
-        }
-    }
+    // Future arrays
+    if (f > 0) {
+        result.s_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), 5UL});
+        result.s_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+        result.s_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f)});
+        result.s_next_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), 5UL});
+        result.s_next_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+        result.s_next_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f)});
 
-    // Build batch sample lists for each ticker (state and next_state)
-    std::map<std::string, std::vector<std::pair<size_t, int>>> ticker_samples;
-    std::map<std::string, std::vector<std::pair<size_t, int>>> ticker_next_samples;
-    std::map<std::string, std::vector<std::pair<size_t, int>>> macro_samples;
-    std::map<std::string, std::vector<std::pair<size_t, int>>> macro_next_samples;
-
-    // Pre-compute global indices for all unique tickers
-    std::map<std::string, size_t> ticker_global_idx;
-    for (const auto& ticker : result.unique_tickers) {
-        ticker_global_idx[ticker] = env_->get_ticker_global_idx(ticker);
-    }
-    for (const auto& ticker : cached_macro_tickers_) {
-        ticker_global_idx[ticker] = env_->get_ticker_global_idx(ticker);
-    }
-
-    // Collect all (global_idx, day) pairs for batch fetch and copy portfolio data
-    for (size_t i = 0; i < actual_batch; ++i) {
-        const auto& t = buffer_[indices[i]];
-
-        // Actions (flat)
-        result.env_ids[i] = t.env_id;
-        for (size_t j = 0; j < action_flat_size && j < t.action.size(); ++j) {
-            result.actions[i * action_flat_size + j] = t.action[j];
-        }
-        // Portfolio state
-        for (int j = 0; j < n_tickers; ++j) {
-            result.state_shares[i * n_tickers + j] = t.state_shares[j];
-            result.next_state_shares[i * n_tickers + j] = t.next_state_shares[j];
-            result.state_avg_buy_price[i * n_tickers + j] = t.state_avg_buy_price[j];
-            result.next_state_avg_buy_price[i * n_tickers + j] = t.next_state_avg_buy_price[j];
-        }
-        result.rewards[i] = t.rewards;
-        result.dones[i] = t.done;
-        result.state_cash[i] = t.state_cash;
-        result.next_state_cash[i] = t.next_state_cash;
-
-        // Build sample lists for tickers
-        for (const auto& ticker : t.tickers) {
-            size_t global_idx = ticker_global_idx[ticker];
-            ticker_samples[ticker].emplace_back(global_idx, t.state_day);
-            ticker_next_samples[ticker].emplace_back(global_idx, t.next_state_day);
-        }
-
-        // Macro tickers
-        for (const auto& ticker : cached_macro_tickers_) {
-            size_t global_idx = ticker_global_idx[ticker];
-            macro_samples[ticker].emplace_back(global_idx, t.state_day);
-            macro_next_samples[ticker].emplace_back(global_idx, t.next_state_day);
+        if (n_macro > 0) {
+            result.macro_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), 5UL});
+            result.macro_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+            result.macro_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f)});
+            result.macro_next_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), 5UL});
+            result.macro_next_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+            result.macro_next_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f)});
         }
     }
 
-    // Batch fetch history market data - need temp double buffers since fill_market_batch uses double
-    if (h > 0) {
-        std::vector<double> temp_ohlcv(actual_batch * time_len * 5);
-        std::vector<double> temp_ind(actual_batch * time_len * n_ind);
+    // Fill data per sample (parallel)
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, B),
+        [&](const tbb::blocked_range<size_t>& range) {
+            for (size_t i = range.begin(); i < range.end(); ++i) {
+                const auto& t = buffer_[indices[i]];
 
-        for (const auto& ticker : result.unique_tickers) {
-            if (!ticker_samples[ticker].empty()) {
-                // State
-                env_->fill_market_batch(
-                    ticker_samples[ticker], h,
-                    temp_ohlcv.data(), temp_ind.data(),
-                    result.s_mask[ticker].data()
-                );
-                for (size_t k = 0; k < temp_ohlcv.size(); ++k)
-                    result.s_ohlcv[ticker][k] = static_cast<float>(temp_ohlcv[k]);
-                for (size_t k = 0; k < temp_ind.size(); ++k)
-                    result.s_indicators[ticker][k] = static_cast<float>(temp_ind[k]);
+                // Copy basic fields
+                result.env_ids[i] = t.env_id;
+                result.rewards[i] = t.rewards;
+                result.dones[i] = t.done;
+                result.state_cash[i] = t.state_cash;
+                result.next_state_cash[i] = t.next_state_cash;
 
-                // Next state
-                env_->fill_market_batch(
-                    ticker_next_samples[ticker], h,
-                    temp_ohlcv.data(), temp_ind.data(),
-                    result.s_next_mask[ticker].data()
-                );
-                for (size_t k = 0; k < temp_ohlcv.size(); ++k)
-                    result.s_next_ohlcv[ticker][k] = static_cast<float>(temp_ohlcv[k]);
-                for (size_t k = 0; k < temp_ind.size(); ++k)
-                    result.s_next_indicators[ticker][k] = static_cast<float>(temp_ind[k]);
-            }
-        }
+                // Actions
+                for (size_t a = 0; a < t.action.size(); ++a) {
+                    result.actions.flat(i * t.action.size() + a) = t.action[a];
+                }
 
-        // Macro tickers
-        for (const auto& ticker : cached_macro_tickers_) {
-            env_->fill_market_batch(
-                macro_samples[ticker], h,
-                temp_ohlcv.data(), temp_ind.data(),
-                result.macro_mask[ticker].data()
-            );
-            for (size_t k = 0; k < temp_ohlcv.size(); ++k)
-                result.macro_ohlcv[ticker][k] = static_cast<float>(temp_ohlcv[k]);
-            for (size_t k = 0; k < temp_ind.size(); ++k)
-                result.macro_indicators[ticker][k] = static_cast<float>(temp_ind[k]);
+                // Portfolio state [B, n_tickers]
+                for (int j = 0; j < n_tic; ++j) {
+                    result.state_shares(i, j) = t.state_shares[j];
+                    result.next_state_shares(i, j) = t.next_state_shares[j];
+                    result.state_avg_buy_price(i, j) = t.state_avg_buy_price[j];
+                    result.next_state_avg_buy_price(i, j) = t.next_state_avg_buy_price[j];
+                }
 
-            env_->fill_market_batch(
-                macro_next_samples[ticker], h,
-                temp_ohlcv.data(), temp_ind.data(),
-                result.macro_next_mask[ticker].data()
-            );
-            for (size_t k = 0; k < temp_ohlcv.size(); ++k)
-                result.macro_next_ohlcv[ticker][k] = static_cast<float>(temp_ohlcv[k]);
-            for (size_t k = 0; k < temp_ind.size(); ++k)
-                result.macro_next_indicators[ticker][k] = static_cast<float>(temp_ind[k]);
-        }
-    }
+                // Market data for this sample's tickers
+                if (h > 0) {
+                    for (int j = 0; j < n_tic; ++j) {
+                        const std::string& tic = t.tickers[j];
+                        auto raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                        auto raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
 
-    // Future market data - use get_market_window_raw per sample (no batch version for future)
-    // When h=0, future=N: data is in ohlcv/indicators/mask fields
-    if (future_length > 0) {
-        tbb::parallel_for(tbb::blocked_range<size_t>(0, actual_batch),
-            [&](const tbb::blocked_range<size_t>& range) {
-                for (size_t i = range.begin(); i < range.end(); ++i) {
-                    const auto& t = buffer_[indices[i]];
-
-                    for (const auto& ticker : t.tickers) {
-                        auto raw = env_->get_market_window_raw(ticker, t.state_day, 0, future_length);
-                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, 0, future_length);
-
-                        size_t ohlcv_size = future_length * 5;
-                        size_t ind_size = future_length * n_ind;
-
-                        for (size_t k = 0; k < ohlcv_size; ++k) {
-                            result.s_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
-                            result.s_next_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        for (int ti = 0; ti < h; ++ti) {
+                            for (int k = 0; k < 5; ++k) {
+                                result.s_ohlcv(i, j, ti, k) = static_cast<float>(raw.ohlcv[ti * 5 + k]);
+                                result.s_next_ohlcv(i, j, ti, k) = static_cast<float>(raw_next.ohlcv[ti * 5 + k]);
+                            }
+                            for (int k = 0; k < n_ind; ++k) {
+                                result.s_indicators(i, j, ti, k) = static_cast<float>(raw.indicators[ti * n_ind + k]);
+                                result.s_next_indicators(i, j, ti, k) = static_cast<float>(raw_next.indicators[ti * n_ind + k]);
+                            }
+                            result.s_mask(i, j, ti) = raw.mask[ti];
+                            result.s_next_mask(i, j, ti) = raw_next.mask[ti];
                         }
-                        for (size_t k = 0; k < ind_size; ++k) {
-                            result.s_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
-                            result.s_next_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
+                    }
+
+                    // Macro tickers (same for all samples)
+                    for (int m = 0; m < n_macro; ++m) {
+                        const std::string& tic = cached_macro_tickers_[m];
+                        auto raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                        auto raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
+
+                        for (int ti = 0; ti < h; ++ti) {
+                            for (int k = 0; k < 5; ++k) {
+                                result.macro_ohlcv(i, m, ti, k) = static_cast<float>(raw.ohlcv[ti * 5 + k]);
+                                result.macro_next_ohlcv(i, m, ti, k) = static_cast<float>(raw_next.ohlcv[ti * 5 + k]);
+                            }
+                            for (int k = 0; k < n_ind; ++k) {
+                                result.macro_indicators(i, m, ti, k) = static_cast<float>(raw.indicators[ti * n_ind + k]);
+                                result.macro_next_indicators(i, m, ti, k) = static_cast<float>(raw_next.indicators[ti * n_ind + k]);
+                            }
+                            result.macro_mask(i, m, ti) = raw.mask[ti];
+                            result.macro_next_mask(i, m, ti) = raw_next.mask[ti];
                         }
-                        size_t mask_size = future_length;
-                        std::memcpy(result.s_future_mask[ticker].data() + i * mask_size,
-                                   raw.mask.data(), mask_size * sizeof(int));
-                        std::memcpy(result.s_next_future_mask[ticker].data() + i * mask_size,
-                                   raw_next.mask.data(), mask_size * sizeof(int));
+                    }
+                }
+
+                // Future data
+                if (f > 0) {
+                    for (int j = 0; j < n_tic; ++j) {
+                        const std::string& tic = t.tickers[j];
+                        auto raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                        auto raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
+
+                        for (int ti = 0; ti < f; ++ti) {
+                            for (int k = 0; k < 5; ++k) {
+                                result.s_future_ohlcv(i, j, ti, k) = static_cast<float>(raw.ohlcv[ti * 5 + k]);
+                                result.s_next_future_ohlcv(i, j, ti, k) = static_cast<float>(raw_next.ohlcv[ti * 5 + k]);
+                            }
+                            for (int k = 0; k < n_ind; ++k) {
+                                result.s_future_indicators(i, j, ti, k) = static_cast<float>(raw.indicators[ti * n_ind + k]);
+                                result.s_next_future_indicators(i, j, ti, k) = static_cast<float>(raw_next.indicators[ti * n_ind + k]);
+                            }
+                            result.s_future_mask(i, j, ti) = raw.mask[ti];
+                            result.s_next_future_mask(i, j, ti) = raw_next.mask[ti];
+                        }
                     }
 
                     // Macro future
-                    for (const auto& ticker : cached_macro_tickers_) {
-                        auto raw = env_->get_market_window_raw(ticker, t.state_day, 0, future_length);
-                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, 0, future_length);
+                    for (int m = 0; m < n_macro; ++m) {
+                        const std::string& tic = cached_macro_tickers_[m];
+                        auto raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                        auto raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
 
-                        size_t ohlcv_size = future_length * 5;
-                        size_t ind_size = future_length * n_ind;
-
-                        for (size_t k = 0; k < ohlcv_size; ++k) {
-                            result.macro_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
-                            result.macro_next_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
+                        for (int ti = 0; ti < f; ++ti) {
+                            for (int k = 0; k < 5; ++k) {
+                                result.macro_future_ohlcv(i, m, ti, k) = static_cast<float>(raw.ohlcv[ti * 5 + k]);
+                                result.macro_next_future_ohlcv(i, m, ti, k) = static_cast<float>(raw_next.ohlcv[ti * 5 + k]);
+                            }
+                            for (int k = 0; k < n_ind; ++k) {
+                                result.macro_future_indicators(i, m, ti, k) = static_cast<float>(raw.indicators[ti * n_ind + k]);
+                                result.macro_next_future_indicators(i, m, ti, k) = static_cast<float>(raw_next.indicators[ti * n_ind + k]);
+                            }
+                            result.macro_future_mask(i, m, ti) = raw.mask[ti];
+                            result.macro_next_future_mask(i, m, ti) = raw_next.mask[ti];
                         }
-                        for (size_t k = 0; k < ind_size; ++k) {
-                            result.macro_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
-                            result.macro_next_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
-                        }
-                        size_t mask_size = future_length;
-                        std::memcpy(result.macro_future_mask[ticker].data() + i * mask_size,
-                                   raw.mask.data(), mask_size * sizeof(int));
-                        std::memcpy(result.macro_next_future_mask[ticker].data() + i * mask_size,
-                                   raw_next.mask.data(), mask_size * sizeof(int));
                     }
                 }
-            });
-    }
+            }
+        });
 
     return result;
 }
