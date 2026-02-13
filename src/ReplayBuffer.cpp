@@ -135,181 +135,210 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(int history_length) const {
 }
 
 ReplayBuffer::SampleBatch ReplayBuffer::sample(size_t batch_size, int history_length, int future_length) const {
-    auto indices = sample_indices(batch_size, history_length);
-    const size_t actual_batch = indices.size();
+    std::vector<size_t> indices = sample_indices(batch_size, history_length);
+    const size_t B = indices.size();
 
     SampleBatch result;
-    result.batch_size = static_cast<int>(actual_batch);
+    result.batch_size = static_cast<int>(B);
     result.history_length = history_length;
     result.future_length = future_length;
     result.action_shape = action_shape_;
 
-    if (actual_batch == 0) return result;
+    if (B == 0) return result;
 
     // Get first transition to determine structure
-    const auto& first_t = buffer_[indices[0]];
+    const StoredTransition& first_t = buffer_[indices[0]];
     result.tickers = first_t.tickers;
     result.n_tickers = static_cast<int>(first_t.tickers.size());
     result.n_objectives = static_cast<int>(first_t.rewards.size());
 
     // Get indicator names from env
-    auto indicator_set = env_->get_indicator_names();
+    std::set<std::string> indicator_set = env_->get_indicator_names();
     result.indicator_names.assign(indicator_set.begin(), indicator_set.end());
     result.n_indicators = static_cast<int>(result.indicator_names.size());
 
-    const int h = history_length;
-    const int time_len = h;  // h history only (no current day to prevent lookahead)
-    const int n_tickers = result.n_tickers;
-    const int n_ind = result.n_indicators;
-
-    // Compute action flat size from action_shape
-    size_t action_flat_size = 1;
-    for (size_t dim : action_shape_) action_flat_size *= dim;
-
-    // Pre-allocate all arrays
-    result.actions.resize(actual_batch * action_flat_size);
-    result.rewards.resize(actual_batch);
-    result.dones.resize(actual_batch);
-    result.state_cash.resize(actual_batch);
-    result.next_state_cash.resize(actual_batch);
-    result.state_shares.resize(actual_batch * n_tickers);
-    result.next_state_shares.resize(actual_batch * n_tickers);
-    result.state_avg_buy_price.resize(actual_batch * n_tickers);
-    result.next_state_avg_buy_price.resize(actual_batch * n_tickers);
-
-    if (h > 0) {
-        for (const auto& ticker : result.tickers) {
-            result.s_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.s_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.s_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.s_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.s_mask[ticker].resize(actual_batch * time_len);
-            result.s_next_mask[ticker].resize(actual_batch * time_len);
-        }
-    }
-
-    // Future market data
-    if (future_length > 0) {
-        for (const auto& ticker : result.tickers) {
-            result.s_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.s_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.s_future_mask[ticker].resize(actual_batch * future_length);
-            result.s_next_future_ohlcv[ticker].resize(actual_batch * future_length * 5);
-            result.s_next_future_indicators[ticker].resize(actual_batch * future_length * n_ind);
-            result.s_next_future_mask[ticker].resize(actual_batch * future_length);
-        }
-    }
-
-    // Macro tickers - get from env
+    // Macro tickers
     const std::vector<std::string>& macro_tickers = env_->get_macro_tickers();
     result.macro_tickers = macro_tickers;
     result.n_macro_tickers = static_cast<int>(macro_tickers.size());
 
+    const int n_tic = result.n_tickers;
+    const int n_macro = result.n_macro_tickers;
+    const int n_ind = result.n_indicators;
+    const int h = history_length;
+    const int f = future_length;
+
+    // Compute action shape with batch dim
+    std::vector<size_t> action_dims = {B};
+    for (size_t dim : action_shape_) action_dims.push_back(dim);
+
+    // Allocate xtensor arrays
+    result.actions = xt::zeros<float>(action_dims);
+    result.rewards.resize(B);
+    result.dones.resize(B);
+    result.state_cash.resize(B);
+    result.next_state_cash.resize(B);
+    result.state_shares = xt::zeros<int>({B, static_cast<size_t>(n_tic)});
+    result.next_state_shares = xt::zeros<int>({B, static_cast<size_t>(n_tic)});
+    result.state_avg_buy_price = xt::zeros<float>({B, static_cast<size_t>(n_tic)});
+    result.next_state_avg_buy_price = xt::zeros<float>({B, static_cast<size_t>(n_tic)});
+
+    // Allocate market data arrays [B, n_tickers, time, ...]
     if (h > 0) {
-        for (const std::string& ticker : macro_tickers) {
-            result.macro_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.macro_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.macro_next_ohlcv[ticker].resize(actual_batch * time_len * 5);
-            result.macro_next_indicators[ticker].resize(actual_batch * time_len * n_ind);
-            result.macro_mask[ticker].resize(actual_batch * time_len);
-            result.macro_next_mask[ticker].resize(actual_batch * time_len);
+        result.s_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), 5UL});
+        result.s_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+        result.s_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h)});
+        result.s_next_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), 5UL});
+        result.s_next_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+        result.s_next_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(h)});
+
+        // Macro: [B, n_macro, time, ...]
+        if (n_macro > 0) {
+            result.macro_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), 5UL});
+            result.macro_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+            result.macro_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h)});
+            result.macro_next_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), 5UL});
+            result.macro_next_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+            result.macro_next_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(h)});
         }
     }
 
-    // Parallel fetch market data
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, actual_batch),
+    // Future arrays
+    if (f > 0) {
+        result.s_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), 5UL});
+        result.s_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+        result.s_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f)});
+        result.s_next_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), 5UL});
+        result.s_next_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+        result.s_next_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_tic), static_cast<size_t>(f)});
+
+        if (n_macro > 0) {
+            result.macro_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), 5UL});
+            result.macro_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+            result.macro_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f)});
+            result.macro_next_future_ohlcv = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), 5UL});
+            result.macro_next_future_indicators = xt::zeros<float>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+            result.macro_next_future_mask = xt::zeros<int>({B, static_cast<size_t>(n_macro), static_cast<size_t>(f)});
+        }
+    }
+
+    // Fill data per sample (parallel)
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, B),
         [&](const tbb::blocked_range<size_t>& range) {
             for (size_t i = range.begin(); i < range.end(); ++i) {
-                const auto& t = buffer_[indices[i]];
+                const StoredTransition& t = buffer_[indices[i]];
 
-                // Copy actions (flat)
-                for (size_t j = 0; j < action_flat_size && j < t.action.size(); ++j) {
-                    result.actions[i * action_flat_size + j] = t.action[j];
-                }
-                // Copy portfolio state
-                for (int j = 0; j < n_tickers; ++j) {
-                    result.state_shares[i * n_tickers + j] = t.state_shares[j];
-                    result.next_state_shares[i * n_tickers + j] = t.next_state_shares[j];
-                    result.state_avg_buy_price[i * n_tickers + j] = t.state_avg_buy_price[j];
-                    result.next_state_avg_buy_price[i * n_tickers + j] = t.next_state_avg_buy_price[j];
-                }
-                // Multi-objective rewards
+                // Copy basic fields
                 result.rewards[i] = t.rewards;
                 result.dones[i] = t.done;
                 result.state_cash[i] = t.state_cash;
                 result.next_state_cash[i] = t.next_state_cash;
 
-                // History market data - convert double to float
+                // Actions [B, action_shape...] - use xt::view
+                auto action_view = xt::view(result.actions, i, xt::all());
+                std::copy(t.action.begin(), t.action.end(), action_view.begin());
+
+                // Portfolio state [B, n_tickers] - use xt::view
+                auto shares_view = xt::view(result.state_shares, i, xt::all());
+                auto next_shares_view = xt::view(result.next_state_shares, i, xt::all());
+                auto avg_view = xt::view(result.state_avg_buy_price, i, xt::all());
+                auto next_avg_view = xt::view(result.next_state_avg_buy_price, i, xt::all());
+                std::copy(t.state_shares.begin(), t.state_shares.end(), shares_view.begin());
+                std::copy(t.next_state_shares.begin(), t.next_state_shares.end(), next_shares_view.begin());
+                std::copy(t.state_avg_buy_price.begin(), t.state_avg_buy_price.end(), avg_view.begin());
+                std::copy(t.next_state_avg_buy_price.begin(), t.next_state_avg_buy_price.end(), next_avg_view.begin());
+
+                // Market data for this sample's tickers
                 if (h > 0) {
-                    for (const auto& ticker : t.tickers) {
-                        auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
-                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
+                    for (int j = 0; j < n_tic; ++j) {
+                        const std::string& tic = t.tickers[j];
+                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
 
-                        size_t ohlcv_size = time_len * 5;
-                        size_t ind_size = time_len * n_ind;
+                        // Adapt raw vectors to xtensor views
+                        auto raw_ohlcv = xt::adapt(raw.ohlcv, {static_cast<size_t>(h), 5UL});
+                        auto raw_next_ohlcv = xt::adapt(raw_next.ohlcv, {static_cast<size_t>(h), 5UL});
+                        auto raw_ind = xt::adapt(raw.indicators, {static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+                        auto raw_next_ind = xt::adapt(raw_next.indicators, {static_cast<size_t>(h), static_cast<size_t>(n_ind)});
 
-                        // Convert double to float
-                        for (size_t k = 0; k < ohlcv_size; ++k) {
-                            result.s_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
-                            result.s_next_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
-                        }
-                        for (size_t k = 0; k < ind_size; ++k) {
-                            result.s_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
-                            result.s_next_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
-                        }
-                        size_t mask_size = time_len;
-                        std::memcpy(result.s_mask[ticker].data() + i * mask_size,
-                                   raw.mask.data(), mask_size * sizeof(int));
-                        std::memcpy(result.s_next_mask[ticker].data() + i * mask_size,
-                                   raw_next.mask.data(), mask_size * sizeof(int));
+                        // Copy using xtensor views
+                        xt::view(result.s_ohlcv, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_ohlcv);
+                        xt::view(result.s_next_ohlcv, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_next_ohlcv);
+                        xt::view(result.s_indicators, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_ind);
+                        xt::view(result.s_next_indicators, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_next_ind);
+
+                        auto mask_view = xt::view(result.s_mask, i, j, xt::all());
+                        auto next_mask_view = xt::view(result.s_next_mask, i, j, xt::all());
+                        std::copy(raw.mask.begin(), raw.mask.end(), mask_view.begin());
+                        std::copy(raw_next.mask.begin(), raw_next.mask.end(), next_mask_view.begin());
                     }
 
                     // Macro tickers
-                    for (const std::string& ticker : macro_tickers) {
-                        auto raw = env_->get_market_window_raw(ticker, t.state_day, h, 0);
-                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, h, 0);
+                    for (int m = 0; m < n_macro; ++m) {
+                        const std::string& tic = macro_tickers[m];
+                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
 
-                        size_t ohlcv_size = time_len * 5;
-                        size_t ind_size = time_len * n_ind;
+                        auto raw_ohlcv = xt::adapt(raw.ohlcv, {static_cast<size_t>(h), 5UL});
+                        auto raw_next_ohlcv = xt::adapt(raw_next.ohlcv, {static_cast<size_t>(h), 5UL});
+                        auto raw_ind = xt::adapt(raw.indicators, {static_cast<size_t>(h), static_cast<size_t>(n_ind)});
+                        auto raw_next_ind = xt::adapt(raw_next.indicators, {static_cast<size_t>(h), static_cast<size_t>(n_ind)});
 
-                        for (size_t k = 0; k < ohlcv_size; ++k) {
-                            result.macro_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
-                            result.macro_next_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
-                        }
-                        for (size_t k = 0; k < ind_size; ++k) {
-                            result.macro_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
-                            result.macro_next_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
-                        }
-                        size_t mask_size = time_len;
-                        std::memcpy(result.macro_mask[ticker].data() + i * mask_size,
-                                   raw.mask.data(), mask_size * sizeof(int));
-                        std::memcpy(result.macro_next_mask[ticker].data() + i * mask_size,
-                                   raw_next.mask.data(), mask_size * sizeof(int));
+                        xt::view(result.macro_ohlcv, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_ohlcv);
+                        xt::view(result.macro_next_ohlcv, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_next_ohlcv);
+                        xt::view(result.macro_indicators, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_ind);
+                        xt::view(result.macro_next_indicators, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_next_ind);
+
+                        auto mask_view = xt::view(result.macro_mask, i, m, xt::all());
+                        auto next_mask_view = xt::view(result.macro_next_mask, i, m, xt::all());
+                        std::copy(raw.mask.begin(), raw.mask.end(), mask_view.begin());
+                        std::copy(raw_next.mask.begin(), raw_next.mask.end(), next_mask_view.begin());
                     }
                 }
 
-                // Future market data - when h=0, future=N: data is in ohlcv/indicators/mask fields
-                if (future_length > 0) {
-                    for (const auto& ticker : t.tickers) {
-                        auto raw = env_->get_market_window_raw(ticker, t.state_day, 0, future_length);
-                        auto raw_next = env_->get_market_window_raw(ticker, t.next_state_day, 0, future_length);
+                // Future data
+                if (f > 0) {
+                    for (int j = 0; j < n_tic; ++j) {
+                        const std::string& tic = t.tickers[j];
+                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
 
-                        size_t ohlcv_size = future_length * 5;
-                        size_t ind_size = future_length * n_ind;
+                        auto raw_ohlcv = xt::adapt(raw.ohlcv, {static_cast<size_t>(f), 5UL});
+                        auto raw_next_ohlcv = xt::adapt(raw_next.ohlcv, {static_cast<size_t>(f), 5UL});
+                        auto raw_ind = xt::adapt(raw.indicators, {static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+                        auto raw_next_ind = xt::adapt(raw_next.indicators, {static_cast<size_t>(f), static_cast<size_t>(n_ind)});
 
-                        for (size_t k = 0; k < ohlcv_size; ++k) {
-                            result.s_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw.ohlcv[k]);
-                            result.s_next_future_ohlcv[ticker][i * ohlcv_size + k] = static_cast<float>(raw_next.ohlcv[k]);
-                        }
-                        for (size_t k = 0; k < ind_size; ++k) {
-                            result.s_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw.indicators[k]);
-                            result.s_next_future_indicators[ticker][i * ind_size + k] = static_cast<float>(raw_next.indicators[k]);
-                        }
-                        size_t mask_size = future_length;
-                        std::memcpy(result.s_future_mask[ticker].data() + i * mask_size,
-                                   raw.mask.data(), mask_size * sizeof(int));
-                        std::memcpy(result.s_next_future_mask[ticker].data() + i * mask_size,
-                                   raw_next.mask.data(), mask_size * sizeof(int));
+                        xt::view(result.s_future_ohlcv, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_ohlcv);
+                        xt::view(result.s_next_future_ohlcv, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_next_ohlcv);
+                        xt::view(result.s_future_indicators, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_ind);
+                        xt::view(result.s_next_future_indicators, i, j, xt::all(), xt::all()) = xt::cast<float>(raw_next_ind);
+
+                        auto mask_view = xt::view(result.s_future_mask, i, j, xt::all());
+                        auto next_mask_view = xt::view(result.s_next_future_mask, i, j, xt::all());
+                        std::copy(raw.mask.begin(), raw.mask.end(), mask_view.begin());
+                        std::copy(raw_next.mask.begin(), raw_next.mask.end(), next_mask_view.begin());
+                    }
+
+                    // Macro future
+                    for (int m = 0; m < n_macro; ++m) {
+                        const std::string& tic = macro_tickers[m];
+                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
+
+                        auto raw_ohlcv = xt::adapt(raw.ohlcv, {static_cast<size_t>(f), 5UL});
+                        auto raw_next_ohlcv = xt::adapt(raw_next.ohlcv, {static_cast<size_t>(f), 5UL});
+                        auto raw_ind = xt::adapt(raw.indicators, {static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+                        auto raw_next_ind = xt::adapt(raw_next.indicators, {static_cast<size_t>(f), static_cast<size_t>(n_ind)});
+
+                        xt::view(result.macro_future_ohlcv, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_ohlcv);
+                        xt::view(result.macro_next_future_ohlcv, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_next_ohlcv);
+                        xt::view(result.macro_future_indicators, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_ind);
+                        xt::view(result.macro_next_future_indicators, i, m, xt::all(), xt::all()) = xt::cast<float>(raw_next_ind);
+
+                        auto mask_view = xt::view(result.macro_future_mask, i, m, xt::all());
+                        auto next_mask_view = xt::view(result.macro_next_future_mask, i, m, xt::all());
+                        std::copy(raw.mask.begin(), raw.mask.end(), mask_view.begin());
+                        std::copy(raw_next.mask.begin(), raw_next.mask.end(), next_mask_view.begin());
                     }
                 }
             }

@@ -5,6 +5,7 @@
 #include <memory>
 #include <random>
 #include "FastFinRL.hpp"
+#include "xtensor.hpp"
 
 namespace fast_finrl {
 
@@ -72,53 +73,55 @@ public:
     // Get market data for state or next_state
     MultiTickerWindowData get_market_data(size_t index, int h, int future, bool next_state = false) const;
 
-    // Batch sample result
+    // Batch sample result - xtensor arrays [batch, n_tickers, time, ...]
     struct SampleBatch {
-        // Per-ticker market data: ticker -> {ohlcv, indicators, mask, days}
-        // ohlcv shape: [batch, h+1, 5] (h history + current) - OHLCV
-        // indicators shape: [batch, h+1, n_ind]
-        // mask shape: [batch, h+1] (1=valid, 0=padding)
-        std::map<std::string, std::vector<float>> s_ohlcv;     // [batch * (h+1) * 5]
-        std::map<std::string, std::vector<float>> s_indicators;
-        std::map<std::string, std::vector<int>> s_mask;         // nullptr equivalent when h=0
+        // Market data: [B, n_tickers, h, 5] for ohlcv, [B, n_tickers, h, n_ind] for indicators
+        xt::xarray<float> s_ohlcv;
+        xt::xarray<float> s_indicators;
+        xt::xarray<int> s_mask;              // [B, n_tickers, h]
+        xt::xarray<float> s_next_ohlcv;
+        xt::xarray<float> s_next_indicators;
+        xt::xarray<int> s_next_mask;
 
-        std::map<std::string, std::vector<float>> s_next_ohlcv;
-        std::map<std::string, std::vector<float>> s_next_indicators;
-        std::map<std::string, std::vector<int>> s_next_mask;
+        // Future market data: [B, n_tickers, future, ...]
+        xt::xarray<float> s_future_ohlcv;
+        xt::xarray<float> s_future_indicators;
+        xt::xarray<int> s_future_mask;
+        xt::xarray<float> s_next_future_ohlcv;
+        xt::xarray<float> s_next_future_indicators;
+        xt::xarray<int> s_next_future_mask;
 
-        // Future market data (when future_length > 0)
-        std::map<std::string, std::vector<float>> s_future_ohlcv;
-        std::map<std::string, std::vector<float>> s_future_indicators;
-        std::map<std::string, std::vector<int>> s_future_mask;
-        std::map<std::string, std::vector<float>> s_next_future_ohlcv;
-        std::map<std::string, std::vector<float>> s_next_future_indicators;
-        std::map<std::string, std::vector<int>> s_next_future_mask;
+        // Macro ticker data: [B, n_macro, time, ...]
+        xt::xarray<float> macro_ohlcv;
+        xt::xarray<float> macro_indicators;
+        xt::xarray<int> macro_mask;
+        xt::xarray<float> macro_next_ohlcv;
+        xt::xarray<float> macro_next_indicators;
+        xt::xarray<int> macro_next_mask;
+        xt::xarray<float> macro_future_ohlcv;
+        xt::xarray<float> macro_future_indicators;
+        xt::xarray<int> macro_future_mask;
+        xt::xarray<float> macro_next_future_ohlcv;
+        xt::xarray<float> macro_next_future_indicators;
+        xt::xarray<int> macro_next_future_mask;
 
-        // Macro ticker market data
-        std::map<std::string, std::vector<float>> macro_ohlcv;
-        std::map<std::string, std::vector<float>> macro_indicators;
-        std::map<std::string, std::vector<int>> macro_mask;
-        std::map<std::string, std::vector<float>> macro_next_ohlcv;
-        std::map<std::string, std::vector<float>> macro_next_indicators;
-        std::map<std::string, std::vector<int>> macro_next_mask;
-
-        std::vector<float> actions;                  // [batch * action_flat_size]
+        xt::xarray<float> actions;                   // [batch, ...action_shape]
         std::vector<std::vector<float>> rewards;     // [batch][n_objectives]
         std::vector<bool> dones;                     // [batch]
         int n_objectives = 1;
 
         // Portfolio state
-        std::vector<float> state_cash;       // [batch]
-        std::vector<float> next_state_cash;  // [batch]
-        std::vector<int> state_shares;       // [batch * n_tickers]
-        std::vector<int> next_state_shares;  // [batch * n_tickers]
-        std::vector<float> state_avg_buy_price;      // [batch * n_tickers]
-        std::vector<float> next_state_avg_buy_price; // [batch * n_tickers]
+        std::vector<float> state_cash;               // [batch]
+        std::vector<float> next_state_cash;          // [batch]
+        xt::xarray<int> state_shares;                // [batch, n_tickers]
+        xt::xarray<int> next_state_shares;
+        xt::xarray<float> state_avg_buy_price;       // [batch, n_tickers]
+        xt::xarray<float> next_state_avg_buy_price;
 
         std::vector<std::string> tickers;
-        std::vector<std::string> macro_tickers;      // macro ticker list
+        std::vector<std::string> macro_tickers;
         std::vector<std::string> indicator_names;
-        std::vector<size_t> action_shape;            // action shape for reshape
+        std::vector<size_t> action_shape;
         int batch_size;
         int history_length;
         int future_length;
