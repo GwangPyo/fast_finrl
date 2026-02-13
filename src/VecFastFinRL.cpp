@@ -587,6 +587,8 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
     // 12. Auto-reset if done
     if (auto_reset_ && done) {
         reset_env(env_idx, seeds_[env_idx] + 1);
+        // Restore done=True so user sees the episode ended
+        buffer_.done[env_idx] = 1;
     }
 
     // 13. Fill observation
