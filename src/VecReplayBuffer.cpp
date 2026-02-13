@@ -287,11 +287,11 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
                         xt::view(result.s_next_indicators, i, j, xt::all(), xt::all()) =
                             xt::cast<float>(xt::view(raw_next_ind_full, xt::range(0, h), xt::all()));
 
-                        // Mask: copy first h elements
-                        xt::view(result.s_mask, i, j, xt::all()) =
-                            xt::adapt(std::vector<int>(raw.mask.begin(), raw.mask.begin() + h), {static_cast<size_t>(h)});
-                        xt::view(result.s_next_mask, i, j, xt::all()) =
-                            xt::adapt(std::vector<int>(raw_next.mask.begin(), raw_next.mask.begin() + h), {static_cast<size_t>(h)});
+                        // Mask: copy first h elements using direct assignment
+                        for (int ti = 0; ti < h; ++ti) {
+                            result.s_mask(i, j, ti) = raw.mask[ti];
+                            result.s_next_mask(i, j, ti) = raw_next.mask[ti];
+                        }
                     }
 
                     // Macro tickers
@@ -314,10 +314,10 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
                         xt::view(result.macro_next_indicators, i, m, xt::all(), xt::all()) =
                             xt::cast<float>(xt::view(raw_next_ind_full, xt::range(0, h), xt::all()));
 
-                        xt::view(result.macro_mask, i, m, xt::all()) =
-                            xt::adapt(std::vector<int>(raw.mask.begin(), raw.mask.begin() + h), {static_cast<size_t>(h)});
-                        xt::view(result.macro_next_mask, i, m, xt::all()) =
-                            xt::adapt(std::vector<int>(raw_next.mask.begin(), raw_next.mask.begin() + h), {static_cast<size_t>(h)});
+                        for (int ti = 0; ti < h; ++ti) {
+                            result.macro_mask(i, m, ti) = raw.mask[ti];
+                            result.macro_next_mask(i, m, ti) = raw_next.mask[ti];
+                        }
                     }
                 }
 
@@ -347,11 +347,11 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
                         xt::view(result.s_next_future_indicators, i, j, xt::all(), xt::all()) =
                             xt::cast<float>(xt::view(raw_next_ind_full, xt::range(1, 1 + f), xt::all()));
 
-                        // Mask: copy last f elements
-                        xt::view(result.s_future_mask, i, j, xt::all()) =
-                            xt::adapt(std::vector<int>(raw.mask.begin() + 1, raw.mask.begin() + 1 + f), {static_cast<size_t>(f)});
-                        xt::view(result.s_next_future_mask, i, j, xt::all()) =
-                            xt::adapt(std::vector<int>(raw_next.mask.begin() + 1, raw_next.mask.begin() + 1 + f), {static_cast<size_t>(f)});
+                        // Mask: copy last f elements (skip index 0 which is current day)
+                        for (int ti = 0; ti < f; ++ti) {
+                            result.s_future_mask(i, j, ti) = raw.mask[1 + ti];
+                            result.s_next_future_mask(i, j, ti) = raw_next.mask[1 + ti];
+                        }
                     }
 
                     // Macro future
@@ -374,10 +374,10 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
                         xt::view(result.macro_next_future_indicators, i, m, xt::all(), xt::all()) =
                             xt::cast<float>(xt::view(raw_next_ind_full, xt::range(1, 1 + f), xt::all()));
 
-                        xt::view(result.macro_future_mask, i, m, xt::all()) =
-                            xt::adapt(std::vector<int>(raw.mask.begin() + 1, raw.mask.begin() + 1 + f), {static_cast<size_t>(f)});
-                        xt::view(result.macro_next_future_mask, i, m, xt::all()) =
-                            xt::adapt(std::vector<int>(raw_next.mask.begin() + 1, raw_next.mask.begin() + 1 + f), {static_cast<size_t>(f)});
+                        for (int ti = 0; ti < f; ++ti) {
+                            result.macro_future_mask(i, m, ti) = raw.mask[1 + ti];
+                            result.macro_next_future_mask(i, m, ti) = raw_next.mask[1 + ti];
+                        }
                     }
                 }
             }
