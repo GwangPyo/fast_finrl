@@ -11,6 +11,7 @@ namespace fast_finrl {
 
 namespace {
 // Helper: copy market data from raw MarketWindowData to result arrays
+// Use plain loops to avoid xtensor memory issues
 inline void copy_market_data(
     xt::xarray<float>& result_ohlcv,
     xt::xarray<float>& result_ind,
@@ -19,16 +20,20 @@ inline void copy_market_data(
     size_t batch_idx, size_t ticker_idx,
     size_t raw_len, int slice_start, int slice_end, size_t n_ind)
 {
-    xt::xarray<double> ohlcv_full = xt::adapt(raw.ohlcv, {raw_len, 5UL});
-    xt::xarray<double> ind_full = xt::adapt(raw.indicators, {raw_len, n_ind});
-    xt::xarray<int> mask_full = xt::adapt(raw.mask, {raw_len});
+    int len = slice_end - slice_start;
+    for (int t = 0; t < len; ++t) {
+        int src_idx = slice_start + t;
+        for (int k = 0; k < 5; ++k) {
+            result_ohlcv(batch_idx, ticker_idx, t, k) = static_cast<float>(raw.ohlcv[src_idx * 5 + k]);
+        }
+        result_mask(batch_idx, ticker_idx, t) = raw.mask[src_idx];
 
-    xt::view(result_ohlcv, batch_idx, ticker_idx, xt::all(), xt::all()) =
-        xt::cast<float>(xt::view(ohlcv_full, xt::range(slice_start, slice_end), xt::all()));
-    xt::view(result_ind, batch_idx, ticker_idx, xt::all(), xt::all()) =
-        xt::cast<float>(xt::view(ind_full, xt::range(slice_start, slice_end), xt::all()));
-    xt::view(result_mask, batch_idx, ticker_idx, xt::all()) =
-        xt::view(mask_full, xt::range(slice_start, slice_end));
+        if (n_ind > 0) {
+            for (size_t ind = 0; ind < n_ind; ++ind) {
+                result_ind(batch_idx, ticker_idx, t, ind) = static_cast<float>(raw.indicators[src_idx * n_ind + ind]);
+            }
+        }
+    }
 }
 } // anonymous namespace
 

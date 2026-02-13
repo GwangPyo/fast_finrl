@@ -11,6 +11,7 @@
 namespace fast_finrl {
 
 namespace {
+// Helper: copy market data from raw MarketWindowData to result arrays
 inline void copy_market_data(
     xt::xarray<float>& result_ohlcv,
     xt::xarray<float>& result_ind,
@@ -19,16 +20,21 @@ inline void copy_market_data(
     size_t batch_idx, size_t ticker_idx,
     size_t raw_len, int slice_start, int slice_end, size_t n_ind)
 {
-    xt::xarray<double> ohlcv_full = xt::adapt(raw.ohlcv, {raw_len, 5UL});
-    xt::xarray<double> ind_full = xt::adapt(raw.indicators, {raw_len, n_ind});
-    xt::xarray<int> mask_full = xt::adapt(raw.mask, {raw_len});
+    int len = slice_end - slice_start;
 
-    xt::view(result_ohlcv, batch_idx, ticker_idx, xt::all(), xt::all()) =
-        xt::cast<float>(xt::view(ohlcv_full, xt::range(slice_start, slice_end), xt::all()));
-    xt::view(result_ind, batch_idx, ticker_idx, xt::all(), xt::all()) =
-        xt::cast<float>(xt::view(ind_full, xt::range(slice_start, slice_end), xt::all()));
-    xt::view(result_mask, batch_idx, ticker_idx, xt::all()) =
-        xt::view(mask_full, xt::range(slice_start, slice_end));
+    for (int t = 0; t < len; ++t) {
+        int src_idx = slice_start + t;
+        for (int k = 0; k < 5; ++k) {
+            result_ohlcv(batch_idx, ticker_idx, t, k) = static_cast<float>(raw.ohlcv[src_idx * 5 + k]);
+        }
+        result_mask(batch_idx, ticker_idx, t) = raw.mask[src_idx];
+
+        if (n_ind > 0) {
+            for (size_t ind = 0; ind < n_ind; ++ind) {
+                result_ind(batch_idx, ticker_idx, t, ind) = static_cast<float>(raw.indicators[src_idx * n_ind + ind]);
+            }
+        }
+    }
 }
 } // anonymous namespace
 
@@ -256,73 +262,77 @@ VecReplayBuffer::SampleBatch VecReplayBuffer::sample(size_t batch_size, int hist
         }
     }
 
-    // Fill data per sample (parallel)
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, B),
-        [&](const tbb::blocked_range<size_t>& range) {
-            for (size_t i = range.begin(); i < range.end(); ++i) {
-                const auto& t = buffer_[indices[i]];
+    // Compute expected action flat size
+    size_t action_flat_size = 1;
+    for (size_t dim : action_shape_) action_flat_size *= dim;
 
-                // Copy basic fields
-                result.env_ids[i] = t.env_id;
-                result.rewards[i] = t.rewards;
-                result.dones[i] = t.done;
-                result.state_cash[i] = t.state_cash;
-                result.next_state_cash[i] = t.next_state_cash;
+    // Fill data per sample in parallel
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, B), [&](const tbb::blocked_range<size_t>& r) {
+        for (size_t i = r.begin(); i < r.end(); ++i) {
+            const VecStoredTransition& t = buffer_[indices[i]];
 
-                // Actions [B, action_shape...]
-                auto action_view = xt::view(result.actions, i, xt::all());
-                std::copy(t.action.begin(), t.action.end(), action_view.begin());
+            // Copy basic fields
+            result.env_ids[i] = t.env_id;
+            result.rewards[i] = t.rewards;
+            result.dones[i] = t.done;
+            result.state_cash[i] = t.state_cash;
+            result.next_state_cash[i] = t.next_state_cash;
 
-                // Portfolio state [B, n_tickers]
-                auto shares_view = xt::view(result.state_shares, i, xt::all());
-                auto next_shares_view = xt::view(result.next_state_shares, i, xt::all());
-                auto avg_view = xt::view(result.state_avg_buy_price, i, xt::all());
-                auto next_avg_view = xt::view(result.next_state_avg_buy_price, i, xt::all());
-                std::copy(t.state_shares.begin(), t.state_shares.end(), shares_view.begin());
-                std::copy(t.next_state_shares.begin(), t.next_state_shares.end(), next_shares_view.begin());
-                std::copy(t.state_avg_buy_price.begin(), t.state_avg_buy_price.end(), avg_view.begin());
-                std::copy(t.next_state_avg_buy_price.begin(), t.next_state_avg_buy_price.end(), next_avg_view.begin());
+            // Actions [B, action_shape...]
+            auto action_view = xt::view(result.actions, i, xt::all());
+            std::copy(t.action.begin(), t.action.end(), action_view.begin());
 
-                // Market data: get_market_window_raw returns (h+1) elements, slice [0,h) for history
-                if (h > 0) {
-                    size_t raw_len = static_cast<size_t>(h + 1);
-                    for (int j = 0; j < n_tic; ++j) {
-                        const std::string& tic = t.tickers[j];
-                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
-                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
-                        copy_market_data(result.s_ohlcv, result.s_indicators, result.s_mask, raw, i, j, raw_len, 0, h, n_ind);
-                        copy_market_data(result.s_next_ohlcv, result.s_next_indicators, result.s_next_mask, raw_next, i, j, raw_len, 0, h, n_ind);
-                    }
-                    for (int m = 0; m < n_macro; ++m) {
-                        const std::string& tic = cached_macro_tickers_[m];
-                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
-                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
-                        copy_market_data(result.macro_ohlcv, result.macro_indicators, result.macro_mask, raw, i, m, raw_len, 0, h, n_ind);
-                        copy_market_data(result.macro_next_ohlcv, result.macro_next_indicators, result.macro_next_mask, raw_next, i, m, raw_len, 0, h, n_ind);
-                    }
+            // Portfolio state [B, n_tickers]
+            auto shares_view = xt::view(result.state_shares, i, xt::all());
+            auto next_shares_view = xt::view(result.next_state_shares, i, xt::all());
+            auto avg_view = xt::view(result.state_avg_buy_price, i, xt::all());
+            auto next_avg_view = xt::view(result.next_state_avg_buy_price, i, xt::all());
+
+            std::copy(t.state_shares.begin(), t.state_shares.end(), shares_view.begin());
+            std::copy(t.next_state_shares.begin(), t.next_state_shares.end(), next_shares_view.begin());
+            std::copy(t.state_avg_buy_price.begin(), t.state_avg_buy_price.end(), avg_view.begin());
+            std::copy(t.next_state_avg_buy_price.begin(), t.next_state_avg_buy_price.end(), next_avg_view.begin());
+
+            // Market data: get_market_window_raw returns (h+1) elements, slice [0,h) for history
+            if (h > 0) {
+                size_t raw_len = static_cast<size_t>(h + 1);
+                for (int j = 0; j < n_tic; ++j) {
+                    const std::string& tic = t.tickers[j];
+                    FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                    FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
+                    copy_market_data(result.s_ohlcv, result.s_indicators, result.s_mask, raw, i, j, raw_len, 0, h, n_ind);
+                    copy_market_data(result.s_next_ohlcv, result.s_next_indicators, result.s_next_mask, raw_next, i, j, raw_len, 0, h, n_ind);
                 }
-
-                // Future data: slice [1, 1+f) to skip current day at index 0
-                if (f > 0) {
-                    size_t raw_future_len = static_cast<size_t>(1 + f);
-                    for (int j = 0; j < n_tic; ++j) {
-                        const std::string& tic = t.tickers[j];
-                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
-                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
-                        copy_market_data(result.s_future_ohlcv, result.s_future_indicators, result.s_future_mask, raw, i, j, raw_future_len, 1, 1 + f, n_ind);
-                        copy_market_data(result.s_next_future_ohlcv, result.s_next_future_indicators, result.s_next_future_mask, raw_next, i, j, raw_future_len, 1, 1 + f, n_ind);
-                    }
-
-                    for (int m = 0; m < n_macro; ++m) {
-                        const std::string& tic = cached_macro_tickers_[m];
-                        FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
-                        FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
-                        copy_market_data(result.macro_future_ohlcv, result.macro_future_indicators, result.macro_future_mask, raw, i, m, raw_future_len, 1, 1 + f, n_ind);
-                        copy_market_data(result.macro_next_future_ohlcv, result.macro_next_future_indicators, result.macro_next_future_mask, raw_next, i, m, raw_future_len, 1, 1 + f, n_ind);
-                    }
+                for (int m = 0; m < n_macro; ++m) {
+                    const std::string& tic = cached_macro_tickers_[m];
+                    FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
+                    FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
+                    copy_market_data(result.macro_ohlcv, result.macro_indicators, result.macro_mask, raw, i, m, raw_len, 0, h, n_ind);
+                    copy_market_data(result.macro_next_ohlcv, result.macro_next_indicators, result.macro_next_mask, raw_next, i, m, raw_len, 0, h, n_ind);
                 }
             }
-        });
+
+            // Future data: slice [1, 1+f) to skip current day at index 0
+            if (f > 0) {
+                size_t raw_future_len = static_cast<size_t>(1 + f);
+                for (int j = 0; j < n_tic; ++j) {
+                    const std::string& tic = t.tickers[j];
+                    FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                    FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
+                    copy_market_data(result.s_future_ohlcv, result.s_future_indicators, result.s_future_mask, raw, i, j, raw_future_len, 1, 1 + f, n_ind);
+                    copy_market_data(result.s_next_future_ohlcv, result.s_next_future_indicators, result.s_next_future_mask, raw_next, i, j, raw_future_len, 1, 1 + f, n_ind);
+                }
+
+                for (int m = 0; m < n_macro; ++m) {
+                    const std::string& tic = cached_macro_tickers_[m];
+                    FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
+                    FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
+                    copy_market_data(result.macro_future_ohlcv, result.macro_future_indicators, result.macro_future_mask, raw, i, m, raw_future_len, 1, 1 + f, n_ind);
+                    copy_market_data(result.macro_next_future_ohlcv, result.macro_next_future_indicators, result.macro_next_future_mask, raw_next, i, m, raw_future_len, 1, 1 + f, n_ind);
+                }
+            }
+        }
+    });
 
     return result;
 }

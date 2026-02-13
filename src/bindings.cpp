@@ -1669,7 +1669,6 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             auto actions_buf = actions_arr.request();
             const double* actions_double = static_cast<const double*>(actions_buf.ptr);
-            int n_tickers = static_cast<int>(actions_buf.shape[1]);
             size_t total_actions = actions_buf.shape[0] * actions_buf.shape[1];
 
             // Convert actions to float
@@ -1698,6 +1697,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
                 int num_envs = static_cast<int>(day_arr.size());
                 if (num_envs == 0) return;
+
+                // Get n_tickers from actual tickers list, NOT from actions shape
+                int n_tickers = tickers_list.empty() ? 0 : static_cast<int>(tickers_list[0].size());
 
                 std::vector<int> env_ids(num_envs);
                 std::vector<int> state_days(num_envs);
@@ -1785,6 +1787,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 int num_envs = static_cast<int>(py::len(states));
                 if (num_envs == 0) return;
 
+                // Get n_tickers from first state's tickers
+                auto first_tickers = states[0].attr("tickers").cast<std::vector<std::string>>();
+                int n_tickers = static_cast<int>(first_tickers.size());
+
                 std::vector<int> env_ids(num_envs);
                 std::vector<int> state_days(num_envs);
                 std::vector<int> next_state_days(num_envs);
@@ -1857,6 +1863,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          int history_length,
                          int future_length) -> py::tuple {
             using Batch = fast_finrl::VecReplayBuffer::SampleBatch;
+
             std::shared_ptr<Batch> holder = std::make_shared<Batch>(
                 batch_size ? self.sample(*batch_size, history_length, future_length)
                            : self.sample(history_length)
