@@ -9,6 +9,29 @@
 
 namespace fast_finrl {
 
+namespace {
+// Helper: copy market data from raw MarketWindowData to result arrays
+inline void copy_market_data(
+    xt::xarray<float>& result_ohlcv,
+    xt::xarray<float>& result_ind,
+    xt::xarray<int>& result_mask,
+    const FastFinRL::MarketWindowData& raw,
+    size_t batch_idx, size_t ticker_idx,
+    size_t raw_len, int slice_start, int slice_end, size_t n_ind)
+{
+    xt::xarray<double> ohlcv_full = xt::adapt(raw.ohlcv, {raw_len, 5UL});
+    xt::xarray<double> ind_full = xt::adapt(raw.indicators, {raw_len, n_ind});
+    xt::xarray<int> mask_full = xt::adapt(raw.mask, {raw_len});
+
+    xt::view(result_ohlcv, batch_idx, ticker_idx, xt::all(), xt::all()) =
+        xt::cast<float>(xt::view(ohlcv_full, xt::range(slice_start, slice_end), xt::all()));
+    xt::view(result_ind, batch_idx, ticker_idx, xt::all(), xt::all()) =
+        xt::cast<float>(xt::view(ind_full, xt::range(slice_start, slice_end), xt::all()));
+    xt::view(result_mask, batch_idx, ticker_idx, xt::all()) =
+        xt::view(mask_full, xt::range(slice_start, slice_end));
+}
+} // anonymous namespace
+
 ReplayBuffer::ReplayBuffer(std::shared_ptr<const FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed, std::vector<size_t> action_shape)
     : env_(std::move(env))
     , capacity_(capacity)
@@ -248,123 +271,41 @@ ReplayBuffer::SampleBatch ReplayBuffer::sample(size_t batch_size, int history_le
                 std::copy(t.state_avg_buy_price.begin(), t.state_avg_buy_price.end(), avg_view.begin());
                 std::copy(t.next_state_avg_buy_price.begin(), t.next_state_avg_buy_price.end(), next_avg_view.begin());
 
-                // Market data for this sample's tickers
-                // NOTE: get_market_window_raw(tic, day, h, future) returns (h + 1 + future) elements
-                // We want h history days (indices 0..h-1, excluding current day at index h)
+                // Market data: get_market_window_raw returns (h+1) elements, slice [0,h) for history
                 if (h > 0) {
-                    size_t raw_len = static_cast<size_t>(h + 1);  // h history + 1 current
+                    size_t raw_len = static_cast<size_t>(h + 1);
                     for (int j = 0; j < n_tic; ++j) {
                         const std::string& tic = t.tickers[j];
                         FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
                         FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
-
-                        // Adapt with actual size, then slice first h rows (exclude current day)
-                        xt::xarray<double> raw_ohlcv_full = xt::adapt(raw.ohlcv, {raw_len, 5UL});
-                        xt::xarray<double> raw_next_ohlcv_full = xt::adapt(raw_next.ohlcv, {raw_len, 5UL});
-                        xt::xarray<double> raw_ind_full = xt::adapt(raw.indicators, {raw_len, static_cast<size_t>(n_ind)});
-                        xt::xarray<double> raw_next_ind_full = xt::adapt(raw_next.indicators, {raw_len, static_cast<size_t>(n_ind)});
-
-                        // Copy first h rows (history, excluding current day at index h)
-                        xt::view(result.s_ohlcv, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ohlcv_full, xt::range(0, h), xt::all()));
-                        xt::view(result.s_next_ohlcv, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ohlcv_full, xt::range(0, h), xt::all()));
-                        xt::view(result.s_indicators, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ind_full, xt::range(0, h), xt::all()));
-                        xt::view(result.s_next_indicators, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ind_full, xt::range(0, h), xt::all()));
-
-                        // Mask: copy first h elements using std::copy (not xt::adapt on temp)
-                        for (int ti = 0; ti < h; ++ti) {
-                            result.s_mask(i, j, ti) = raw.mask[ti];
-                            result.s_next_mask(i, j, ti) = raw_next.mask[ti];
-                        }
+                        copy_market_data(result.s_ohlcv, result.s_indicators, result.s_mask, raw, i, j, raw_len, 0, h, n_ind);
+                        copy_market_data(result.s_next_ohlcv, result.s_next_indicators, result.s_next_mask, raw_next, i, j, raw_len, 0, h, n_ind);
                     }
-
-                    // Macro tickers
                     for (int m = 0; m < n_macro; ++m) {
                         const std::string& tic = macro_tickers[m];
                         FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, h, 0);
                         FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, h, 0);
-
-                        xt::xarray<double> raw_ohlcv_full = xt::adapt(raw.ohlcv, {raw_len, 5UL});
-                        xt::xarray<double> raw_next_ohlcv_full = xt::adapt(raw_next.ohlcv, {raw_len, 5UL});
-                        xt::xarray<double> raw_ind_full = xt::adapt(raw.indicators, {raw_len, static_cast<size_t>(n_ind)});
-                        xt::xarray<double> raw_next_ind_full = xt::adapt(raw_next.indicators, {raw_len, static_cast<size_t>(n_ind)});
-
-                        xt::view(result.macro_ohlcv, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ohlcv_full, xt::range(0, h), xt::all()));
-                        xt::view(result.macro_next_ohlcv, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ohlcv_full, xt::range(0, h), xt::all()));
-                        xt::view(result.macro_indicators, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ind_full, xt::range(0, h), xt::all()));
-                        xt::view(result.macro_next_indicators, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ind_full, xt::range(0, h), xt::all()));
-
-                        for (int ti = 0; ti < h; ++ti) {
-                            result.macro_mask(i, m, ti) = raw.mask[ti];
-                            result.macro_next_mask(i, m, ti) = raw_next.mask[ti];
-                        }
+                        copy_market_data(result.macro_ohlcv, result.macro_indicators, result.macro_mask, raw, i, m, raw_len, 0, h, n_ind);
+                        copy_market_data(result.macro_next_ohlcv, result.macro_next_indicators, result.macro_next_mask, raw_next, i, m, raw_len, 0, h, n_ind);
                     }
                 }
 
-                // Future data
-                // NOTE: get_market_window_raw(tic, day, 0, f) returns (1 + f) elements
-                // We want f future days (indices 1..f, excluding current day at index 0)
+                // Future data: slice [1, 1+f) to skip current day at index 0
                 if (f > 0) {
-                    size_t raw_future_len = static_cast<size_t>(1 + f);  // 1 current + f future
+                    size_t raw_future_len = static_cast<size_t>(1 + f);
                     for (int j = 0; j < n_tic; ++j) {
                         const std::string& tic = t.tickers[j];
                         FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
                         FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
-
-                        // Adapt with actual size, then slice last f rows (exclude current day)
-                        xt::xarray<double> raw_ohlcv_full = xt::adapt(raw.ohlcv, {raw_future_len, 5UL});
-                        xt::xarray<double> raw_next_ohlcv_full = xt::adapt(raw_next.ohlcv, {raw_future_len, 5UL});
-                        xt::xarray<double> raw_ind_full = xt::adapt(raw.indicators, {raw_future_len, static_cast<size_t>(n_ind)});
-                        xt::xarray<double> raw_next_ind_full = xt::adapt(raw_next.indicators, {raw_future_len, static_cast<size_t>(n_ind)});
-
-                        // Copy last f rows (future, excluding current day at index 0)
-                        xt::view(result.s_future_ohlcv, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ohlcv_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.s_next_future_ohlcv, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ohlcv_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.s_future_indicators, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ind_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.s_next_future_indicators, i, j, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ind_full, xt::range(1, 1 + f), xt::all()));
-
-                        // Mask: copy last f elements (skip index 0 which is current day)
-                        for (int ti = 0; ti < f; ++ti) {
-                            result.s_future_mask(i, j, ti) = raw.mask[1 + ti];
-                            result.s_next_future_mask(i, j, ti) = raw_next.mask[1 + ti];
-                        }
+                        copy_market_data(result.s_future_ohlcv, result.s_future_indicators, result.s_future_mask, raw, i, j, raw_future_len, 1, 1 + f, n_ind);
+                        copy_market_data(result.s_next_future_ohlcv, result.s_next_future_indicators, result.s_next_future_mask, raw_next, i, j, raw_future_len, 1, 1 + f, n_ind);
                     }
-
-                    // Macro future
                     for (int m = 0; m < n_macro; ++m) {
                         const std::string& tic = macro_tickers[m];
                         FastFinRL::MarketWindowData raw = env_->get_market_window_raw(tic, t.state_day, 0, f);
                         FastFinRL::MarketWindowData raw_next = env_->get_market_window_raw(tic, t.next_state_day, 0, f);
-
-                        xt::xarray<double> raw_ohlcv_full = xt::adapt(raw.ohlcv, {raw_future_len, 5UL});
-                        xt::xarray<double> raw_next_ohlcv_full = xt::adapt(raw_next.ohlcv, {raw_future_len, 5UL});
-                        xt::xarray<double> raw_ind_full = xt::adapt(raw.indicators, {raw_future_len, static_cast<size_t>(n_ind)});
-                        xt::xarray<double> raw_next_ind_full = xt::adapt(raw_next.indicators, {raw_future_len, static_cast<size_t>(n_ind)});
-
-                        xt::view(result.macro_future_ohlcv, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ohlcv_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.macro_next_future_ohlcv, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ohlcv_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.macro_future_indicators, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_ind_full, xt::range(1, 1 + f), xt::all()));
-                        xt::view(result.macro_next_future_indicators, i, m, xt::all(), xt::all()) =
-                            xt::cast<float>(xt::view(raw_next_ind_full, xt::range(1, 1 + f), xt::all()));
-
-                        for (int ti = 0; ti < f; ++ti) {
-                            result.macro_future_mask(i, m, ti) = raw.mask[1 + ti];
-                            result.macro_next_future_mask(i, m, ti) = raw_next.mask[1 + ti];
-                        }
+                        copy_market_data(result.macro_future_ohlcv, result.macro_future_indicators, result.macro_future_mask, raw, i, m, raw_future_len, 1, 1 + f, n_ind);
+                        copy_market_data(result.macro_next_future_ohlcv, result.macro_next_future_indicators, result.macro_next_future_mask, raw_next, i, m, raw_future_len, 1, 1 + f, n_ind);
                     }
                 }
             }
