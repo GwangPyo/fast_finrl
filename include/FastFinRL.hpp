@@ -125,18 +125,6 @@ public:
 
     // Batch fill for replay buffer optimization
     // Fills multiple samples directly into pre-allocated arrays
-    // samples: [(global_ticker_idx, day), ...] - N samples
-    // ohlcv_out: [N * time_len * 5] - pre-allocated (OHLCV)
-    // ind_out: [N * time_len * n_ind] - pre-allocated
-    // mask_out: [N * time_len] - pre-allocated
-    void fill_market_batch(
-        const vector<pair<size_t, int>>& samples,  // [(global_idx, day), ...]
-        int h,  // history length (time_len = h + 1)
-        double* ohlcv_out,
-        double* ind_out,
-        int* mask_out
-    ) const;
-
     // Get global ticker index (for batch fill)
     size_t get_ticker_global_idx(const string& ticker) const {
         auto it = ticker_global_idx_.find(ticker);
