@@ -347,73 +347,141 @@ void VecReplayBuffer::clear() {
     full_ = false;
 }
 
-void VecReplayBuffer::save(const std::string& path) const {
-    nlohmann::json j;
-    j["capacity"] = capacity_;
-    j["write_idx"] = write_idx_;
-    j["full"] = full_;
-
-    nlohmann::json transitions = nlohmann::json::array();
-    for (const auto& t : buffer_) {
-        nlohmann::json tj;
-        tj["env_id"] = t.env_id;
-        tj["state_day"] = t.state_day;
-        tj["tickers"] = t.tickers;
-        tj["state_cash"] = t.state_cash;
-        tj["state_shares"] = t.state_shares;
-        tj["state_avg_buy_price"] = t.state_avg_buy_price;
-        tj["action"] = t.action;
-        tj["rewards"] = t.rewards;
-        tj["done"] = t.done;
-        tj["terminal"] = t.terminal;
-        tj["next_state_day"] = t.next_state_day;
-        tj["next_state_cash"] = t.next_state_cash;
-        tj["next_state_shares"] = t.next_state_shares;
-        tj["next_state_avg_buy_price"] = t.next_state_avg_buy_price;
-        transitions.push_back(tj);
+namespace {
+    template<typename T>
+    void write_pod(std::ostream& f, const T& val) {
+        f.write(reinterpret_cast<const char*>(&val), sizeof(T));
     }
-    j["transitions"] = transitions;
 
-    std::ofstream f(path);
+    template<typename T>
+    void read_pod(std::istream& f, T& val) {
+        f.read(reinterpret_cast<char*>(&val), sizeof(T));
+    }
+
+    template<typename T>
+    void write_vector(std::ostream& f, const std::vector<T>& vec) {
+        size_t sz = vec.size();
+        write_pod(f, sz);
+        if (sz > 0) {
+            f.write(reinterpret_cast<const char*>(vec.data()), sz * sizeof(T));
+        }
+    }
+
+    template<typename T>
+    void read_vector(std::istream& f, std::vector<T>& vec) {
+        size_t sz;
+        read_pod(f, sz);
+        vec.resize(sz);
+        if (sz > 0) {
+            f.read(reinterpret_cast<char*>(vec.data()), sz * sizeof(T));
+        }
+    }
+
+    void write_string(std::ostream& f, const std::string& s) {
+        size_t sz = s.size();
+        write_pod(f, sz);
+        if (sz > 0) {
+            f.write(s.data(), sz);
+        }
+    }
+
+    void read_string(std::istream& f, std::string& s) {
+        size_t sz;
+        read_pod(f, sz);
+        s.resize(sz);
+        if (sz > 0) {
+            f.read(&s[0], sz);
+        }
+    }
+
+    void write_string_vector(std::ostream& f, const std::vector<std::string>& vec) {
+        size_t sz = vec.size();
+        write_pod(f, sz);
+        for (const auto& s : vec) {
+            write_string(f, s);
+        }
+    }
+
+    void read_string_vector(std::istream& f, std::vector<std::string>& vec) {
+        size_t sz;
+        read_pod(f, sz);
+        vec.resize(sz);
+        for (auto& s : vec) {
+            read_string(f, s);
+        }
+    }
+}
+
+void VecReplayBuffer::save(const std::string& path) const {
+    std::ofstream f(path, std::ios::binary);
     if (!f) {
         throw std::runtime_error("Failed to open file for writing: " + path);
     }
-    f << j.dump();
+
+    // Header
+    write_pod(f, capacity_);
+    write_pod(f, write_idx_);
+    write_pod(f, full_);
+
+    // Number of transitions
+    size_t n_transitions = buffer_.size();
+    write_pod(f, n_transitions);
+
+    // Transitions
+    for (const auto& t : buffer_) {
+        write_pod(f, t.env_id);
+        write_pod(f, t.state_day);
+        write_string_vector(f, t.tickers);
+        write_pod(f, t.state_cash);
+        write_vector(f, t.state_shares);
+        write_vector(f, t.state_avg_buy_price);
+        write_vector(f, t.action);
+        write_vector(f, t.rewards);
+        write_pod(f, t.done);
+        write_pod(f, t.terminal);
+        write_pod(f, t.next_state_day);
+        write_pod(f, t.next_state_cash);
+        write_vector(f, t.next_state_shares);
+        write_vector(f, t.next_state_avg_buy_price);
+    }
 }
 
 void VecReplayBuffer::load(const std::string& path) {
-    std::ifstream f(path);
+    std::ifstream f(path, std::ios::binary);
     if (!f) {
         throw std::runtime_error("Failed to open file for reading: " + path);
     }
 
-    nlohmann::json j;
-    f >> j;
+    // Header
+    read_pod(f, capacity_);
+    read_pod(f, write_idx_);
+    read_pod(f, full_);
 
-    capacity_ = j["capacity"].get<size_t>();
-    write_idx_ = j["write_idx"].get<size_t>();
-    full_ = j["full"].get<bool>();
+    // Number of transitions
+    size_t n_transitions;
+    read_pod(f, n_transitions);
 
     buffer_.clear();
-    buffer_.reserve(capacity_);
+    buffer_.reserve(n_transitions);
 
-    for (const auto& tj : j["transitions"]) {
+    // Transitions
+    for (size_t i = 0; i < n_transitions; ++i) {
         VecStoredTransition t;
-        t.env_id = tj["env_id"].get<int>();
-        t.state_day = tj["state_day"].get<int>();
-        t.tickers = tj["tickers"].get<std::vector<std::string>>();
-        t.state_cash = tj["state_cash"].get<float>();
-        t.state_shares = tj["state_shares"].get<std::vector<int>>();
-        t.state_avg_buy_price = tj["state_avg_buy_price"].get<std::vector<float>>();
-        t.action = tj["action"].get<std::vector<float>>();
-        t.rewards = tj["rewards"].get<std::vector<float>>();
-        t.done = tj["done"].get<bool>();
-        t.terminal = tj["terminal"].get<bool>();
-        t.next_state_day = tj["next_state_day"].get<int>();
-        t.next_state_cash = tj["next_state_cash"].get<float>();
-        t.next_state_shares = tj["next_state_shares"].get<std::vector<int>>();
-        t.next_state_avg_buy_price = tj["next_state_avg_buy_price"].get<std::vector<float>>();
-        buffer_.push_back(t);
+        read_pod(f, t.env_id);
+        read_pod(f, t.state_day);
+        read_string_vector(f, t.tickers);
+        read_pod(f, t.state_cash);
+        read_vector(f, t.state_shares);
+        read_vector(f, t.state_avg_buy_price);
+        read_vector(f, t.action);
+        read_vector(f, t.rewards);
+        read_pod(f, t.done);
+        read_pod(f, t.terminal);
+        read_pod(f, t.next_state_day);
+        read_pod(f, t.next_state_cash);
+        read_vector(f, t.next_state_shares);
+        read_vector(f, t.next_state_avg_buy_price);
+        buffer_.push_back(std::move(t));
     }
 }
 
