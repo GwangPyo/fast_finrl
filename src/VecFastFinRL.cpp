@@ -344,10 +344,8 @@ double VecFastFinRL::calculate_total_asset(size_t env_idx) const {
     for (int t = 0; t < n_tickers_; ++t) {
         if (shares_[base_idx + t] > 0) {
             const string& tic = tickers_[env_idx][t];
-            try {
-                double close = base_env_->get_raw_value(tic, day, "close");
-                total += shares_[base_idx + t] * close;
-            } catch (...) {}
+            double close = base_env_->get_raw_value(tic, day, "close");
+            total += shares_[base_idx + t] * close;
         }
     }
     return total;
@@ -356,57 +354,45 @@ double VecFastFinRL::calculate_total_asset(size_t env_idx) const {
 double VecFastFinRL::get_close(size_t env_idx, size_t ticker_idx) const {
     const string& tic = tickers_[env_idx][ticker_idx];
     int day = day_[env_idx];
-    try {
-        return base_env_->get_raw_value(tic, day, "close");
-    } catch (...) {
-        return 0.0;
-    }
+    return base_env_->get_raw_value(tic, day, "close");
 }
 
 double VecFastFinRL::get_close_at_day(size_t env_idx, size_t ticker_idx, int day) const {
     const string& tic = tickers_[env_idx][ticker_idx];
-    try {
-        return base_env_->get_raw_value(tic, day, "close");
-    } catch (...) {
-        return 0.0;
-    }
+    return base_env_->get_raw_value(tic, day, "close");
 }
 
 double VecFastFinRL::get_bid_price(size_t env_idx, size_t ticker_idx, const string& side) {
     const string& tic = tickers_[env_idx][ticker_idx];
     int day = day_[env_idx];
 
-    try {
-        if (config_.bidding == "default" || config_.bidding == "deterministic") {
-            return base_env_->get_raw_value(tic, day, "close");
-        }
+    if (config_.bidding == "default" || config_.bidding == "deterministic") {
+        return base_env_->get_raw_value(tic, day, "close");
+    }
 
-        double low = base_env_->get_raw_value(tic, day, "low");
-        double high = base_env_->get_raw_value(tic, day, "high");
-        double open_price = base_env_->get_raw_value(tic, day, "open");
-        double close = base_env_->get_raw_value(tic, day, "close");
+    double low = base_env_->get_raw_value(tic, day, "low");
+    double high = base_env_->get_raw_value(tic, day, "high");
+    double open_price = base_env_->get_raw_value(tic, day, "open");
+    double close = base_env_->get_raw_value(tic, day, "close");
 
-        if (config_.bidding == "uniform") {
-            uniform_real_distribution<double> dist(low, high);
+    if (config_.bidding == "uniform") {
+        uniform_real_distribution<double> dist(low, high);
+        return dist(rngs_[env_idx]);
+    }
+
+    if (config_.bidding == "adv_uniform") {
+        if (side == "sell") {
+            double maximum = min(open_price, close);
+            uniform_real_distribution<double> dist(low, maximum);
+            return dist(rngs_[env_idx]);
+        } else {
+            double minimum = max(open_price, close);
+            uniform_real_distribution<double> dist(minimum, high);
             return dist(rngs_[env_idx]);
         }
-
-        if (config_.bidding == "adv_uniform") {
-            if (side == "sell") {
-                double maximum = min(open_price, close);
-                uniform_real_distribution<double> dist(low, maximum);
-                return dist(rngs_[env_idx]);
-            } else {
-                double minimum = max(open_price, close);
-                uniform_real_distribution<double> dist(minimum, high);
-                return dist(rngs_[env_idx]);
-            }
-        }
-
-        return close;
-    } catch (...) {
-        return 0.0;
     }
+
+    return close;
 }
 
 int VecFastFinRL::sell_stock(size_t env_idx, size_t ticker_idx, int action) {
@@ -459,14 +445,10 @@ void VecFastFinRL::check_stop_loss(size_t env_idx) {
 
         const string& tic = tickers_[env_idx][t];
         double price;
-        try {
-            if (config_.stop_loss_calculation == "close") {
-                price = base_env_->get_raw_value(tic, day, "close");
-            } else {
-                price = base_env_->get_raw_value(tic, day, "low");
-            }
-        } catch (...) {
-            continue;
+        if (config_.stop_loss_calculation == "close") {
+            price = base_env_->get_raw_value(tic, day, "close");
+        } else {
+            price = base_env_->get_raw_value(tic, day, "low");
         }
 
         if (price < avg_buy_price_[idx] * config_.stop_loss_tolerance) {
