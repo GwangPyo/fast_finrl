@@ -122,27 +122,16 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     // Store per-env tickers
     tickers_ = effective_tickers_list;
 
-    // Build ticker index lookup and first_day for each env's tickers
+    // Validate all tickers exist
     const auto& all_tickers = base_env_->get_all_tickers();
-    ticker_global_idx_.resize(num_envs_ * n_tickers_);
-    ticker_first_day_.resize(num_envs_ * n_tickers_);
-
     for (int i = 0; i < num_envs_; ++i) {
         for (int t = 0; t < n_tickers_; ++t) {
             const string& tic = tickers_[i][t];
             if (all_tickers.find(tic) == all_tickers.end()) {
                 throw runtime_error("Ticker not found: " + tic);
             }
-            // Get global idx and first_day from base_env_ via get_raw_value trick
-            // We need to access internal data, so use reset temporarily
-            size_t flat_idx = i * n_tickers_ + t;
-            ticker_global_idx_[flat_idx] = base_env_->get_raw_value(tic, 0, "close") >= 0 ? 0 : 0;  // placeholder
         }
     }
-
-    // Actually, we need to properly get the ticker info. Let's reset base_env with first env's tickers
-    // to access internal maps. This is a workaround - in production, we'd expose the maps.
-    base_env_->reset(tickers_list[0], 0, 0);
 
     // Allocate per-env state arrays
     day_.resize(num_envs_);

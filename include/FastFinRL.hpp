@@ -136,7 +136,9 @@ public:
 
     int get_ticker_first_day(const string& ticker) const {
         auto it = ticker_first_day_.find(ticker);
-        if (it == ticker_first_day_.end()) return 0;
+        if (it == ticker_first_day_.end()) {
+            throw runtime_error("get_ticker_first_day: ticker not in data: " + ticker);
+        }
         return it->second;
     }
 
