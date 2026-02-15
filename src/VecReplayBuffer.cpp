@@ -143,6 +143,10 @@ std::vector<size_t> VecReplayBuffer::sample_indices(size_t batch_size, int histo
     (void)history_length;  // env already validated data availability
 
     size_t current_size = size();
+    if (current_size == 0) {
+        throw std::runtime_error("Cannot sample from empty buffer");
+    }
+
     batch_size = std::min(batch_size, current_size);
 
     std::vector<size_t> indices(batch_size);

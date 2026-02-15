@@ -247,12 +247,19 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
     }
 
     // Random day selection
+    // max_start_day must be <= max_day * 0.8, but also must respect min_start_day
     int max_start_day = static_cast<int>(max_day_ * 0.8);
     if (min_start_day >= max_start_day) {
-        min_start_day = 0;
+        // If ticker data starts late, use a valid range from min_start_day
+        // Cap at max_day - 1 to ensure at least some episode length
+        max_start_day = max_day_ - 1;
+    }
+    if (min_start_day >= max_start_day) {
+        // Edge case: ticker only has very limited data
+        min_start_day = max_start_day;
     }
 
-    uniform_int_distribution<int> dist(min_start_day, max_start_day - 1);
+    uniform_int_distribution<int> dist(min_start_day, max_start_day);
     day_[env_idx] = dist(rngs_[env_idx]);
 
     // Initialize portfolio
@@ -369,19 +376,16 @@ double VecFastFinRL::get_bid_price(size_t env_idx, size_t ticker_idx, const stri
         return dist(rngs_[env_idx]);
     }
 
-    if (config_.bidding == "adv_uniform") {
-        if (side == "sell") {
-            double maximum = min(open_price, close);
-            uniform_real_distribution<double> dist(low, maximum);
-            return dist(rngs_[env_idx]);
-        } else {
-            double minimum = max(open_price, close);
-            uniform_real_distribution<double> dist(minimum, high);
-            return dist(rngs_[env_idx]);
-        }
+    // adv_uniform
+    if (side == "sell") {
+        double maximum = min(open_price, close);
+        uniform_real_distribution<double> dist(low, maximum);
+        return dist(rngs_[env_idx]);
+    } else {
+        double minimum = max(open_price, close);
+        uniform_real_distribution<double> dist(minimum, high);
+        return dist(rngs_[env_idx]);
     }
-
-    return close;
 }
 
 int VecFastFinRL::sell_stock(size_t env_idx, size_t ticker_idx, int action) {
@@ -551,7 +555,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
 
     // 11. Check terminal conditions
     bool terminal = (day_[env_idx] >= max_day_ - 1);
-    bool done = (end_asset <= 25000.0) || terminal;
+    bool done = (end_asset <= config_.failure_threshold) || terminal;
     buffer_.terminal[env_idx] = terminal ? 1 : 0;
     buffer_.done[env_idx] = done ? 1 : 0;
 

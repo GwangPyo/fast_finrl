@@ -208,14 +208,12 @@ double FastFinRL::get_raw_value(const string& ticker, int day, const string& col
 double FastFinRL::get_price(size_t ticker_idx, const string& price_type) const {
     size_t row_idx = active_row_indices_[ticker_idx];
     if (price_type == "close") return col_close_->get()[row_idx];
-    if (price_type == "open") return col_open_->get()[row_idx];
-    if (price_type == "high") return col_high_->get()[row_idx];
-    if (price_type == "low") return col_low_->get()[row_idx];
-    return col_close_->get()[row_idx];
+    else if (price_type == "open") return col_open_->get()[row_idx];
+    else if (price_type == "high") return col_high_->get()[row_idx];
+    else return col_low_->get()[row_idx];  // "low"
 }
 
 string FastFinRL::get_date() const {
-    if (active_tickers_.empty()) return "";
     return col_date_->get()[active_row_indices_[0]];
 }
 
@@ -280,29 +278,16 @@ void FastFinRL::init_bid_options() {
 }
 
 double FastFinRL::get_sell_bid_price(size_t ticker_idx) {
-    auto it = sell_bid_options_.find(bidding);
-    if (it != sell_bid_options_.end()) {
-        return it->second(ticker_idx);
-    }
-    return get_price(ticker_idx, "close");
+    return sell_bid_options_.at(bidding)(ticker_idx);
 }
 
 double FastFinRL::get_buy_bid_price(size_t ticker_idx) {
-    auto it = buy_bid_options_.find(bidding);
-    if (it != buy_bid_options_.end()) {
-        return it->second(ticker_idx);
-    }
-    return get_price(ticker_idx, "close");
+    return buy_bid_options_.at(bidding)(ticker_idx);
 }
 
 double FastFinRL::get_randomized_price(size_t ticker_idx, const string& option) {
-    // Legacy method - kept for compatibility
-    if (option == "sell") {
-        return get_sell_bid_price(ticker_idx);
-    } else if (option == "buy") {
-        return get_buy_bid_price(ticker_idx);
-    }
-    return get_price(ticker_idx, "close");
+    if (option == "sell") return get_sell_bid_price(ticker_idx);
+    else return get_buy_bid_price(ticker_idx);  // "buy"
 }
 
 nlohmann::json FastFinRL::reset(const vector<string>& ticker_list, int64_t seed, int shifted_start) {
