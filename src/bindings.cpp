@@ -51,6 +51,16 @@ inline std::string return_format_to_string(fast_finrl::ReturnFormat fmt) {
     return fmt == fast_finrl::ReturnFormat::Vec ? "vec" : "json";
 }
 
+// Flat index helpers - centralized index calculation to prevent bugs
+// See debug.log: "인덱스 계산은 한 곳에서만"
+inline size_t flat_2d(size_t i, size_t j, size_t stride) {
+    return i * stride + j;
+}
+
+inline size_t flat_3d(size_t i, size_t j, size_t k, size_t stride_j, size_t stride_k) {
+    return i * stride_j * stride_k + j * stride_k + k;
+}
+
 PYBIND11_MODULE(fast_finrl_py, m) {
     m.doc() = "FastFinRL - High-performance C++ implementation of FinRL StockTradingEnv";
 
@@ -187,7 +197,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     const auto& inds = m["indicators"];
                     int j = 0;
                     for (const auto& ind_name : indicator_names) {
-                        ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                        ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
                         ++j;
                     }
                 }
@@ -213,7 +223,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         const auto& inds = m["indicators"];
                         int j = 0;
                         for (const auto& ind_name : indicator_names) {
-                            m_ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                            m_ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
                             ++j;
                         }
                     }
@@ -294,7 +304,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     const auto& inds = m["indicators"];
                     int j = 0;
                     for (const auto& ind_name : indicator_names) {
-                        ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                        ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
                         ++j;
                     }
                 }
@@ -372,7 +382,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     const auto& inds = m["indicators"];
                     int j = 0;
                     for (const auto& ind_name : indicator_names) {
-                        ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                        ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
                         ++j;
                     }
                 }
@@ -398,7 +408,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                         const auto& inds = m["indicators"];
                         int j = 0;
                         for (const auto& ind_name : indicator_names) {
-                            m_ind_ptr[i * n_ind + j] = inds[ind_name].get<double>();
+                            m_ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
                             ++j;
                         }
                     }
@@ -846,7 +856,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             float* r_ptr = rewards.mutable_data();
             for (int i = 0; i < B; ++i) {
                 for (int j = 0; j < n_obj; ++j) {
-                    r_ptr[i * n_obj + j] = holder->rewards[i][j];
+                    r_ptr[flat_2d(i, j, n_obj)] = holder->rewards[i][j];
                 }
             }
 
@@ -1032,21 +1042,21 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             py::array_t<int> shares(n_tic);
             int* shares_ptr = shares.mutable_data();
             for (int t = 0; t < n_tic; ++t) {
-                shares_ptr[t] = result.shares[i * n_tic + t];
+                shares_ptr[t] = result.shares[flat_2d(i, t, n_tic)];
             }
             state["shares"] = shares;
 
             py::array_t<double> avg_buy_price(n_tic);
             double* avg_ptr = avg_buy_price.mutable_data();
             for (int t = 0; t < n_tic; ++t) {
-                avg_ptr[t] = result.avg_buy_price[i * n_tic + t];
+                avg_ptr[t] = result.avg_buy_price[flat_2d(i, t, n_tic)];
             }
             state["avg_buy_price"] = avg_buy_price;
 
             py::array_t<double> open_arr({n_tic});
             double* open_ptr = open_arr.mutable_data();
             for (int t = 0; t < n_tic; ++t) {
-                open_ptr[t] = result.open[i * n_tic + t];
+                open_ptr[t] = result.open[flat_2d(i, t, n_tic)];
             }
             state["open"] = open_arr;
 
@@ -1054,7 +1064,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             double* ind_ptr = indicators.mutable_data();
             for (int t = 0; t < n_tic; ++t) {
                 for (int k = 0; k < n_ind; ++k) {
-                    ind_ptr[t * n_ind + k] = result.indicators[(i * n_tic + t) * n_ind + k];
+                    ind_ptr[flat_2d(t, k, n_ind)] = result.indicators[flat_3d(i, t, k, n_tic, n_ind)];
                 }
             }
             state["indicators"] = indicators;
@@ -1065,7 +1075,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 py::array_t<double> macro_open({n_macro});
                 double* m_open_ptr = macro_open.mutable_data();
                 for (int m = 0; m < n_macro; ++m) {
-                    m_open_ptr[m] = result.macro_open[i * n_macro + m];
+                    m_open_ptr[m] = result.macro_open[flat_2d(i, m, n_macro)];
                 }
                 state["macro_open"] = macro_open;
 
@@ -1073,7 +1083,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 double* m_ind_ptr = macro_ind.mutable_data();
                 for (int m = 0; m < n_macro; ++m) {
                     for (int k = 0; k < n_ind; ++k) {
-                        m_ind_ptr[m * n_ind + k] = result.macro_indicators[(i * n_macro + m) * n_ind + k];
+                        m_ind_ptr[flat_2d(m, k, n_ind)] = result.macro_indicators[flat_3d(i, m, k, n_macro, n_ind)];
                     }
                 }
                 state["macro_indicators"] = macro_ind;
@@ -1827,10 +1837,10 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     auto ns_avg_ptr = ns_avg.data();
 
                     for (int j = 0; j < n_tickers; ++j) {
-                        state_shares_flat[i * n_tickers + j] = s_shares_ptr[j];
-                        next_state_shares_flat[i * n_tickers + j] = ns_shares_ptr[j];
-                        state_avg_flat[i * n_tickers + j] = static_cast<float>(s_avg_ptr[j]);
-                        next_state_avg_flat[i * n_tickers + j] = static_cast<float>(ns_avg_ptr[j]);
+                        state_shares_flat[flat_2d(i, j, n_tickers)] = s_shares_ptr[j];
+                        next_state_shares_flat[flat_2d(i, j, n_tickers)] = ns_shares_ptr[j];
+                        state_avg_flat[flat_2d(i, j, n_tickers)] = static_cast<float>(s_avg_ptr[j]);
+                        next_state_avg_flat[flat_2d(i, j, n_tickers)] = static_cast<float>(ns_avg_ptr[j]);
                     }
 
                     py::object r = rewards_list[i];
@@ -2030,7 +2040,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             float* r_ptr = rewards.mutable_data();
             for (int i = 0; i < B; ++i) {
                 for (int j = 0; j < n_obj; ++j) {
-                    r_ptr[i * n_obj + j] = holder->rewards[i][j];
+                    r_ptr[flat_2d(i, j, n_obj)] = holder->rewards[i][j];
                 }
             }
 
