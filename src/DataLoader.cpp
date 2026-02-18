@@ -180,6 +180,24 @@ void ParquetLoader::load(const string& path, MyDataFrame& df) {
                     string_cols[i] = extract_column<arrow::StringType, string>(chunked, num_rows);
                 } else if (type_id == arrow::Type::INT64) {
                     string_cols[i] = extract_as_string<arrow::Int64Type>(chunked, num_rows);
+                } else if (type_id == arrow::Type::TIMESTAMP) {
+                    // datetime64[ns] -> string "YYYY-MM-DD HH:MM:SS"
+                    vector<string> col_data;
+                    col_data.reserve(num_rows);
+                    for (int c = 0; c < chunked->num_chunks(); ++c) {
+                        auto array = static_pointer_cast<arrow::TimestampArray>(chunked->chunk(c));
+                        for (int64_t j = 0; j < array->length(); ++j) {
+                            int64_t ts = array->Value(j);  // nanoseconds since epoch
+                            // Convert to seconds
+                            time_t secs = ts / 1000000000LL;
+                            struct tm tm_buf;
+                            gmtime_r(&secs, &tm_buf);
+                            char buf[32];
+                            strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf);
+                            col_data.push_back(string(buf));
+                        }
+                    }
+                    string_cols[i] = move(col_data);
                 }
             } else {
                 if (type_id == arrow::Type::DOUBLE) {
