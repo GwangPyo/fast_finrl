@@ -1379,6 +1379,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         .def("get_indicator_names", &fast_finrl::VecFastFinRL::get_indicator_names, "Get indicator names")
         .def("get_macro_tickers", &fast_finrl::VecFastFinRL::get_macro_tickers, "Get macro tickers")
         .def("get_tickers", &fast_finrl::VecFastFinRL::get_tickers, "Get tickers for each env")
+        .def_readonly("shifted_start", &fast_finrl::VecFastFinRL::shifted_start, "Start day offset for history window")
 
         // Market window access - vectorized version (batched days and ticker lists)
         .def("get_market_window_numpy", [](const fast_finrl::VecFastFinRL& self,

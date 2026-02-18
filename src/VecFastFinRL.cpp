@@ -16,7 +16,7 @@ VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLCo
     , return_format_(config.return_format)
     , num_envs_(n_envs)
     , last_base_seed_(config.initial_seed)
-    , shifted_start_(shifted_start)
+    , shifted_start(shifted_start)
 {
     if (n_envs <= 0) {
         throw runtime_error("n_envs must be > 0");
@@ -250,7 +250,7 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
     }
 
     // Apply shifted_start offset for history window
-    min_start_day += shifted_start_;
+    min_start_day += shifted_start;
 
     // Random day selection
     // max_start_day must be <= max_day * 0.8, but also must respect min_start_day

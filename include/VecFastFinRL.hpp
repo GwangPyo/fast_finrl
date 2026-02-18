@@ -83,6 +83,9 @@ public:
     const FastFinRLConfig& config() const { return config_; }
     bool auto_reset() const { return auto_reset_; }
 
+    // Public read-only members
+    int shifted_start = 0;  // start day offset for history window
+
 private:
     // Base environment for shared market data
     shared_ptr<FastFinRL> base_env_;
@@ -110,7 +113,6 @@ private:
     vector<int64_t> seeds_;                       // [N]
     vector<mt19937> rngs_;                        // [N]
     int64_t last_base_seed_ = 0;                  // base seed from last reset
-    int shifted_start_ = 0;                       // start day offset for history window
 
     // Per-env episode tracking
     vector<int> num_stop_loss_;                   // [N]
