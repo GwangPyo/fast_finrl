@@ -260,9 +260,11 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
         // Cap at max_day - 1 to ensure at least some episode length
         max_start_day = max_day_ - 1;
     }
-    if (min_start_day >= max_start_day) {
-        // Edge case: ticker only has very limited data
-        min_start_day = max_start_day;
+    if (min_start_day > max_start_day) {
+        // Not enough data for this shifted_start - fail loud
+        throw runtime_error("Not enough data: min_start_day=" + to_string(min_start_day) +
+                            " > max_start_day=" + to_string(max_start_day) +
+                            " (max_day=" + to_string(max_day_) + ", shifted_start=" + to_string(shifted_start) + ")");
     }
 
     uniform_int_distribution<int> dist(min_start_day, max_start_day);
