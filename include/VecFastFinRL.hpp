@@ -34,7 +34,8 @@ public:
 
     // Constructor
     // n_envs: number of parallel environments (required, must be > 0)
-    explicit VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config = FastFinRLConfig{});
+    // shifted_start: minimum start day offset for history window (default 5)
+    explicit VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config = FastFinRLConfig{}, int shifted_start = 5);
 
     // Core API
     // Full reset with explicit tickers and seeds
@@ -109,6 +110,7 @@ private:
     vector<int64_t> seeds_;                       // [N]
     vector<mt19937> rngs_;                        // [N]
     int64_t last_base_seed_ = 0;                  // base seed from last reset
+    int shifted_start_ = 0;                       // start day offset for history window
 
     // Per-env episode tracking
     vector<int> num_stop_loss_;                   // [N]

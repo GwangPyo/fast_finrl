@@ -1212,7 +1212,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          bool auto_reset,
                          const std::string& return_format,
                          int num_tickers,
-                         bool shuffle_tickers) {
+                         bool shuffle_tickers,
+                         int shifted_start) {
             fast_finrl::FastFinRLConfig config;
             config.initial_amount = initial_amount;
             config.failure_threshold = failure_threshold;
@@ -1228,7 +1229,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             config.return_format = parse_return_format(return_format);
             config.num_tickers = num_tickers;
             config.shuffle_tickers = shuffle_tickers;
-            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, n_envs, config);
+            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, n_envs, config, shifted_start);
         }),
              py::arg("csv_path"),
              py::arg("n_envs"),
@@ -1247,6 +1248,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
              py::arg("return_format") = "json",
              py::arg("num_tickers") = 0,
              py::arg("shuffle_tickers") = false,
+             py::arg("shifted_start") = 5,
              "Create VecFastFinRL - vectorized environment. n_envs: number of parallel environments (required)")
 
         // Return format control

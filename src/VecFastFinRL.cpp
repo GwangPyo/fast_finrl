@@ -10,12 +10,13 @@ namespace fast_finrl {
 // Large prime for seed generation (10^6th prime)
 static constexpr int64_t SEED_PRIME = 15485863LL;
 
-VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config)
+VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config, int shifted_start)
     : config_(config)
     , auto_reset_(true)
     , return_format_(config.return_format)
     , num_envs_(n_envs)
     , last_base_seed_(config.initial_seed)
+    , shifted_start_(shifted_start)
 {
     if (n_envs <= 0) {
         throw runtime_error("n_envs must be > 0");
@@ -209,11 +210,13 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 }
 
 VecFastFinRL::StepResult VecFastFinRL::reset() {
-    // No-arg reset: keep same tickers (or empty for shuffle/all), increment seed
+    // No-arg reset: increment seed
+    // If shuffle_tickers is true, use empty lists to trigger re-shuffle
+    // Otherwise keep same tickers
     vector<vector<string>> tickers_to_use;
 
-    if (tickers_.empty()) {
-        // No previous tickers - use empty lists (shuffle will fill, or main reset will use all)
+    if (config_.shuffle_tickers || tickers_.empty()) {
+        // Empty lists -> will be filled by shuffle or use all
         tickers_to_use.assign(num_envs_, vector<string>{});
     } else {
         tickers_to_use = tickers_;
@@ -245,6 +248,9 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
             min_start_day = first_day;
         }
     }
+
+    // Apply shifted_start offset for history window
+    min_start_day += shifted_start_;
 
     // Random day selection
     // max_start_day must be <= max_day * 0.8, but also must respect min_start_day
