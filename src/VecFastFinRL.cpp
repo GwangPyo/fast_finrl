@@ -197,13 +197,19 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
         seeds[i] = (seed * (i + 1) * SEED_PRIME) % (SEED_PRIME - 1);
     }
 
-    // Use previous tickers if tickers_list is empty
+    // Use previous tickers if tickers_list is empty (unless shuffle_tickers is enabled)
     vector<vector<string>> effective_tickers_list = tickers_list;
-    if (tickers_list.empty() && !tickers_.empty()) {
-        effective_tickers_list = tickers_;
-    } else if (tickers_list.empty()) {
-        // Create empty tickers for each env (will be filled by shuffle if enabled)
-        effective_tickers_list.assign(num_envs_, vector<string>{});
+    if (tickers_list.empty()) {
+        if (config_.shuffle_tickers) {
+            // Empty vectors trigger shuffle in full reset
+            effective_tickers_list.assign(num_envs_, vector<string>{});
+        } else if (!tickers_.empty()) {
+            // Reuse previous tickers
+            effective_tickers_list = tickers_;
+        } else {
+            // No previous tickers, create empty for default selection
+            effective_tickers_list.assign(num_envs_, vector<string>{});
+        }
     }
 
     return reset(effective_tickers_list, seeds);
