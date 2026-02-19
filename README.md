@@ -479,7 +479,8 @@ VecFastFinRL(
     auto_reset: bool = True,    # NEW: Auto-reset done envs with seed+1
     return_format: str = "json",# "json" returns List[dict], "vec" returns single dict
     num_tickers: int = 0,       # Number of tickers for shuffle mode
-    shuffle_tickers: bool = False  # Random ticker selection per env
+    shuffle_tickers: bool = False,  # Random ticker selection per env
+    shifted_start: int = 5      # NEW: Minimum day offset for history window
 )
 ```
 
@@ -489,8 +490,33 @@ VecFastFinRL(
 | `auto_reset` | bool | True | When env is done, automatically reset with seed+1 |
 | `num_tickers` | int | 0 | Number of tickers for shuffle mode. 0 = use all provided tickers |
 | `shuffle_tickers` | bool | False | When True, reset() randomly selects num_tickers per env. Each env can have different tickers |
+| `shifted_start` | int | 5 | Minimum day offset added to ticker start days. Ensures sufficient history data for sampling |
 
 **Note:** `initial_seed` parameter is NOT available. Seeds are provided per-env in reset().
+
+### shifted_start Parameter
+
+Ensures that reset() starts episodes with enough historical data for `get_market_window_numpy()`.
+
+**How it works:**
+1. Find `max_first_day` = maximum of first available days among all active tickers
+2. `min_start_day` = `max_first_day` + `shifted_start`
+3. Episode starts at random day in `[min_start_day, max_day * 0.8)`
+
+**Expected behavior:**
+- With `shifted_start=5`, requesting `h=5` history always returns valid data (mask=1)
+- With `shifted_start=0`, early-day samples may have partial history (mask=0 for missing days)
+
+**Example:**
+```python
+# Ensure 10 days of valid history
+vec_env = VecFastFinRL("data.csv", n_envs=4, shifted_start=10)
+states = vec_env.reset(tickers_list, seeds)
+
+# All envs start at day >= 10, so h=10 history is always available
+data = vec_env.get_market_window_numpy(tickers, day, h=10, future=0)
+assert data["AAPL"]["past_mask"].sum() == 10  # All history valid
+```
 
 ---
 

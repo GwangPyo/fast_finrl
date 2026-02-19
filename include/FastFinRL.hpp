@@ -256,6 +256,8 @@ private:
     // Bidding option function maps
     map<string, BidFunction> sell_bid_options_;
     map<string, BidFunction> buy_bid_options_;
+    BidFunction* active_sell_bid_ = nullptr;
+    BidFunction* active_buy_bid_ = nullptr;
     void init_bid_options();
     double get_sell_bid_price(size_t ticker_idx);
     double get_buy_bid_price(size_t ticker_idx);

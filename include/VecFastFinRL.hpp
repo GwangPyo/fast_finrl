@@ -131,7 +131,14 @@ private:
     size_t get_row_idx(size_t env_idx, size_t ticker_idx, int day) const;
     double get_close(size_t env_idx, size_t ticker_idx) const;
     double get_close_at_day(size_t env_idx, size_t ticker_idx, int day) const;
-    double get_bid_price(size_t env_idx, size_t ticker_idx, const string& side);
+
+    // Bid price functions
+    using VecBidFunction = function<double(size_t env_idx, size_t ticker_idx)>;
+    VecBidFunction* active_sell_bid_ = nullptr;
+    VecBidFunction* active_buy_bid_ = nullptr;
+    map<string, VecBidFunction> sell_bid_options_;
+    map<string, VecBidFunction> buy_bid_options_;
+    void init_bid_options();
 
     // Trading helpers (per-env)
     double calculate_total_asset(size_t env_idx) const;

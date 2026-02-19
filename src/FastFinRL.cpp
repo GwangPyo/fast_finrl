@@ -98,7 +98,7 @@ void FastFinRL::build_index_tables() {
     // First pass: build row_index_map and assign global indices
     size_t next_global_idx = 0;
     for (size_t i = 0; i < tic_col.size(); ++i) {
-        const auto& tic = tic_col[i];
+        const string& tic = tic_col[i];
         int day = day_col[i];
         row_index_map_[{tic, day}] = i;
 
@@ -113,7 +113,7 @@ void FastFinRL::build_index_tables() {
     }
 
     // Build dense lookup table: ticker_row_table_[global_idx][day] = row_index
-    ticker_row_table_.assign(next_global_idx, vector<size_t>(max_day_, 0));
+    ticker_row_table_.assign(next_global_idx, vector<size_t>(max_day_, SIZE_MAX));
     for (size_t i = 0; i < tic_col.size(); ++i) {
         size_t global_idx = ticker_global_idx_[tic_col[i]];
         int day = day_col[i];
@@ -275,14 +275,18 @@ void FastFinRL::init_bid_options() {
     buy_bid_options_["uniform"] = uniform_fn;
     buy_bid_options_["adv_uniform"] = high_uniform_fn;
     buy_bid_options_["deterministic"] = deterministic_fn;
+
+    // Cache active bid functions
+    active_sell_bid_ = &sell_bid_options_.at(bidding);
+    active_buy_bid_ = &buy_bid_options_.at(bidding);
 }
 
 double FastFinRL::get_sell_bid_price(size_t ticker_idx) {
-    return sell_bid_options_.at(bidding)(ticker_idx);
+    return (*active_sell_bid_)(ticker_idx);
 }
 
 double FastFinRL::get_buy_bid_price(size_t ticker_idx) {
-    return buy_bid_options_.at(bidding)(ticker_idx);
+    return (*active_buy_bid_)(ticker_idx);
 }
 
 double FastFinRL::get_randomized_price(size_t ticker_idx, const string& option) {
@@ -392,6 +396,10 @@ int FastFinRL::sell_stock(size_t index, int action) {
     trades_++;
     trades_this_step_ += sell_num;
 
+    if (shares_[index] == 0) {
+        avg_buy_price_[index] = 0.0;
+    }
+
     // Debug: record execution info
     trade_info_[index].fill_price = price;
     trade_info_[index].cost += trade_cost;
@@ -445,7 +453,6 @@ void FastFinRL::check_stop_loss() {
 
         if (price < avg_buy_price_[i] * stop_loss_tolerance) {
             sell_stock(i, shares_[i]);
-            avg_buy_price_[i] = 0.0;
             num_stop_loss_++;
         }
     }
@@ -490,12 +497,7 @@ nlohmann::json FastFinRL::step(const vector<double>& actions) {
         sell_stock(idx, abs(scaled_actions[idx]));
     }
 
-    // 6. Reset avg_buy_price for stocks with 0 shares
-    for (size_t i = 0; i < shares_.size(); ++i) {
-        if (shares_[i] == 0) avg_buy_price_[i] = 0.0;
-    }
-
-    // 7. Execute buys
+    // 6. Execute buys
     for (size_t idx : buy_indices) {
         buy_stock(idx, scaled_actions[idx]);
     }

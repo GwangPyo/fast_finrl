@@ -63,6 +63,68 @@ VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLCo
         // All tickers
         tickers_.assign(num_envs_, all_tics);
     }
+
+    // Initialize bid option function pointers
+    init_bid_options();
+}
+
+void VecFastFinRL::init_bid_options() {
+    // Default/deterministic: use close price
+    auto default_fn = [this](size_t env_idx, size_t ticker_idx) -> double {
+        const string& tic = tickers_[env_idx][ticker_idx];
+        int day = day_[env_idx];
+        return base_env_->get_raw_value(tic, day, "close");
+    };
+
+    // Uniform: random between low and high
+    auto uniform_fn = [this](size_t env_idx, size_t ticker_idx) -> double {
+        const string& tic = tickers_[env_idx][ticker_idx];
+        int day = day_[env_idx];
+        double low = base_env_->get_raw_value(tic, day, "low");
+        double high = base_env_->get_raw_value(tic, day, "high");
+        uniform_real_distribution<double> dist(low, high);
+        return dist(rngs_[env_idx]);
+    };
+
+    // Low uniform (for sell): random between low and min(open, close)
+    auto low_uniform_fn = [this](size_t env_idx, size_t ticker_idx) -> double {
+        const string& tic = tickers_[env_idx][ticker_idx];
+        int day = day_[env_idx];
+        double low = base_env_->get_raw_value(tic, day, "low");
+        double open_price = base_env_->get_raw_value(tic, day, "open");
+        double close = base_env_->get_raw_value(tic, day, "close");
+        double maximum = min(open_price, close);
+        uniform_real_distribution<double> dist(low, maximum);
+        return dist(rngs_[env_idx]);
+    };
+
+    // High uniform (for buy): random between max(open, close) and high
+    auto high_uniform_fn = [this](size_t env_idx, size_t ticker_idx) -> double {
+        const string& tic = tickers_[env_idx][ticker_idx];
+        int day = day_[env_idx];
+        double high = base_env_->get_raw_value(tic, day, "high");
+        double open_price = base_env_->get_raw_value(tic, day, "open");
+        double close = base_env_->get_raw_value(tic, day, "close");
+        double minimum = max(open_price, close);
+        uniform_real_distribution<double> dist(minimum, high);
+        return dist(rngs_[env_idx]);
+    };
+
+    // Sell bid options
+    sell_bid_options_["default"] = default_fn;
+    sell_bid_options_["uniform"] = uniform_fn;
+    sell_bid_options_["adv_uniform"] = low_uniform_fn;
+    sell_bid_options_["deterministic"] = default_fn;
+
+    // Buy bid options
+    buy_bid_options_["default"] = default_fn;
+    buy_bid_options_["uniform"] = uniform_fn;
+    buy_bid_options_["adv_uniform"] = high_uniform_fn;
+    buy_bid_options_["deterministic"] = default_fn;
+
+    // Cache active bid functions
+    active_sell_bid_ = &sell_bid_options_.at(config_.bidding);
+    active_buy_bid_ = &buy_bid_options_.at(config_.bidding);
 }
 
 VecFastFinRL::StepResult VecFastFinRL::reset(
@@ -379,65 +441,39 @@ double VecFastFinRL::calculate_total_asset(size_t env_idx) const {
     return total;
 }
 
-double VecFastFinRL::get_close(size_t env_idx, size_t ticker_idx) const {
+double VecFastFinRL::get_close(const size_t env_idx, const size_t ticker_idx) const {
     const string& tic = tickers_[env_idx][ticker_idx];
     int day = day_[env_idx];
     return base_env_->get_raw_value(tic, day, "close");
 }
 
-double VecFastFinRL::get_close_at_day(size_t env_idx, size_t ticker_idx, int day) const {
+double VecFastFinRL::get_close_at_day(const size_t env_idx, const size_t ticker_idx, const int day) const {
     const string& tic = tickers_[env_idx][ticker_idx];
     return base_env_->get_raw_value(tic, day, "close");
 }
 
-double VecFastFinRL::get_bid_price(size_t env_idx, size_t ticker_idx, const string& side) {
-    const string& tic = tickers_[env_idx][ticker_idx];
-    int day = day_[env_idx];
-
-    if (config_.bidding == "default" || config_.bidding == "deterministic") {
-        return base_env_->get_raw_value(tic, day, "close");
-    }
-
-    double low = base_env_->get_raw_value(tic, day, "low");
-    double high = base_env_->get_raw_value(tic, day, "high");
-    double open_price = base_env_->get_raw_value(tic, day, "open");
-    double close = base_env_->get_raw_value(tic, day, "close");
-
-    if (config_.bidding == "uniform") {
-        uniform_real_distribution<double> dist(low, high);
-        return dist(rngs_[env_idx]);
-    }
-
-    // adv_uniform
-    if (side == "sell") {
-        double maximum = min(open_price, close);
-        uniform_real_distribution<double> dist(low, maximum);
-        return dist(rngs_[env_idx]);
-    } else {
-        double minimum = max(open_price, close);
-        uniform_real_distribution<double> dist(minimum, high);
-        return dist(rngs_[env_idx]);
-    }
-}
-
-int VecFastFinRL::sell_stock(size_t env_idx, size_t ticker_idx, int action) {
+int VecFastFinRL::sell_stock(const size_t env_idx, const size_t ticker_idx, int action) {
     size_t idx = env_idx * n_tickers_ + ticker_idx;
     if (shares_[idx] <= 0) return 0;
 
     int sell_num = min(action, shares_[idx]);
-    double price = get_bid_price(env_idx, ticker_idx, "sell");
+    double price = (*active_sell_bid_)(env_idx, ticker_idx);
     double sell_amount = price * sell_num * (1.0 - config_.sell_cost_pct);
 
     cash_[env_idx] += sell_amount;
     shares_[idx] -= sell_num;
     trades_[env_idx]++;
 
+    if (shares_[idx] == 0) {
+        avg_buy_price_[idx] = 0.0;
+    }
+
     return sell_num;
 }
 
 int VecFastFinRL::buy_stock(size_t env_idx, size_t ticker_idx, int action) {
     size_t idx = env_idx * n_tickers_ + ticker_idx;
-    double price = get_bid_price(env_idx, ticker_idx, "buy");
+    double price = (*active_buy_bid_)(env_idx, ticker_idx);
 
     if (price <= 0) return 0;
 
@@ -478,7 +514,6 @@ void VecFastFinRL::check_stop_loss(size_t env_idx) {
 
         if (price < avg_buy_price_[idx] * config_.stop_loss_tolerance) {
             sell_stock(env_idx, t, shares_[idx]);
-            avg_buy_price_[idx] = 0.0;
             num_stop_loss_[env_idx]++;
         }
     }
@@ -558,14 +593,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
         sell_stock(env_idx, t, qty);
     }
 
-    // 6. Reset avg_buy_price for zero-share positions
-    for (int t = 0; t < n_tickers_; ++t) {
-        if (shares_[base_idx + t] == 0) {
-            avg_buy_price_[base_idx + t] = 0.0;
-        }
-    }
-
-    // 7. Execute buys
+    // 6. Execute buys
     for (auto& [t, qty] : buys) {
         buy_stock(env_idx, t, qty);
     }
@@ -596,7 +624,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
         // Restore done=True so user sees the episode ended
         buffer_.done[env_idx] = 1;
     }
-
+    
     // 13. Fill observation
     fill_obs(env_idx);
 }
