@@ -123,7 +123,7 @@ private:
     StepResult buffer_;
 
     // Internal helpers
-    void reset_env(size_t env_idx, int64_t seed);
+    void reset_single_env(size_t env_idx, int64_t seed, const vector<string>& tickers = {});
     void step_env(size_t env_idx, const double* actions);
     void fill_obs(size_t env_idx);
 

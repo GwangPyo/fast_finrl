@@ -169,10 +169,9 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 
     // Parallel reset all environments
     tbb::parallel_for(tbb::blocked_range<size_t>(0, num_envs_),
-        [this, &seeds](const tbb::blocked_range<size_t>& range) {
+        [this, &seeds, &effective_tickers_list](const tbb::blocked_range<size_t>& range) {
             for (size_t i = range.begin(); i < range.end(); ++i) {
-                reset_env(i, seeds[i]);
-                fill_obs(i);
+                reset_single_env(i, seeds[i], effective_tickers_list[i]);
             }
         });
 
@@ -232,10 +231,26 @@ VecFastFinRL::StepResult VecFastFinRL::reset() {
     return reset(tickers_to_use, last_base_seed_ + 1);
 }
 
-void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
+void VecFastFinRL::reset_single_env(size_t env_idx, int64_t seed, const vector<string>& tickers) {
     // Initialize RNG
     seeds_[env_idx] = seed;
     rngs_[env_idx].seed(static_cast<unsigned int>(seed));
+
+    // Ticker handling
+    if (!tickers.empty()) {
+        // Explicit tickers provided
+        tickers_[env_idx] = tickers;
+    } else if (config_.shuffle_tickers) {
+        // Shuffle enabled - select new random tickers
+        const auto& all_tickers_set = base_env_->get_all_tickers();
+        vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
+        sort(all_tics.begin(), all_tics.end());
+        shuffle(all_tics.begin(), all_tics.end(), rngs_[env_idx]);
+        int n = min(n_tickers_, static_cast<int>(all_tics.size()));
+        tickers_[env_idx] = vector<string>(all_tics.begin(), all_tics.begin() + n);
+        sort(tickers_[env_idx].begin(), tickers_[env_idx].end());
+    }
+    // else: keep existing tickers_[env_idx]
 
     // Calculate min_start_day for this env's tickers
     int min_start_day = 0;
@@ -292,6 +307,9 @@ void VecFastFinRL::reset_env(size_t env_idx, int64_t seed) {
     buffer_.done[env_idx] = 0;
     buffer_.terminal[env_idx] = 0;
     buffer_.reward[env_idx] = 0.0;
+
+    // Fill observations
+    fill_obs(env_idx);
 }
 
 void VecFastFinRL::fill_obs(size_t env_idx) {
@@ -490,8 +508,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset_indices(
         [this, &indices, &seeds](const tbb::blocked_range<size_t>& range) {
             for (size_t i = range.begin(); i < range.end(); ++i) {
                 size_t env_idx = indices[i];
-                reset_env(env_idx, seeds[i]);
-                fill_obs(env_idx);
+                reset_single_env(env_idx, seeds[i], {});  // empty tickers → shuffle if enabled
             }
         });
 
@@ -575,7 +592,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
 
     // 12. Auto-reset if done
     if (auto_reset_ && done) {
-        reset_env(env_idx, seeds_[env_idx] + 1);
+        reset_single_env(env_idx, seeds_[env_idx] + 1, {});  // empty tickers → shuffle if enabled
         // Restore done=True so user sees the episode ended
         buffer_.done[env_idx] = 1;
     }
