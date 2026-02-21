@@ -239,6 +239,11 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 }
                 state["indicator_names"] = ind_names;
 
+                // Info fields (zeroed at reset)
+                state["num_stop_loss"] = 0;
+                state["n_trades"] = 0;
+                state["loss_cut_amount"] = 0.0;
+
                 return state;
             }
 
@@ -312,11 +317,43 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                 state["indicators"] = indicators;
                 state["tickers"] = ticker_list;
 
+                // Macro (open only)
+                if (json_state.contains("macro") && !json_state["macro"].empty()) {
+                    auto& macro = json_state["macro"];
+                    auto macro_tickers = self.get_macro_tickers();
+                    int n_macro = static_cast<int>(macro_tickers.size());
+
+                    py::array_t<double> macro_open({n_macro});
+                    py::array_t<double> macro_ind({n_macro, n_ind});
+                    double* m_open_ptr = macro_open.mutable_data();
+                    double* m_ind_ptr = macro_ind.mutable_data();
+
+                    for (int i = 0; i < n_macro; ++i) {
+                        const auto& m = macro[macro_tickers[i]];
+                        m_open_ptr[i] = m["open"].get<double>();
+
+                        const auto& inds = m["indicators"];
+                        int j = 0;
+                        for (const auto& ind_name : indicator_names) {
+                            m_ind_ptr[flat_2d(i, j, n_ind)] = inds[ind_name].get<double>();
+                            ++j;
+                        }
+                    }
+                    state["macro_open"] = macro_open;
+                    state["macro_indicators"] = macro_ind;
+                    state["macro_tickers"] = macro_tickers;
+                }
+
                 py::list ind_names;
                 for (const auto& name : indicator_names) {
                     ind_names.append(name);
                 }
                 state["indicator_names"] = ind_names;
+
+                // Info fields (zeroed at reset)
+                state["num_stop_loss"] = 0;
+                state["n_trades"] = 0;
+                state["loss_cut_amount"] = 0.0;
 
                 return state;
             }
@@ -423,6 +460,12 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     ind_names.append(name);
                 }
                 state["indicator_names"] = ind_names;
+
+                // Info fields
+                auto& info = json_state["info"];
+                state["num_stop_loss"] = info["num_stop_loss"].get<int>();
+                state["n_trades"] = info["n_trades"].get<int>();
+                state["loss_cut_amount"] = info["loss_cut_amount"].get<double>();
 
                 return state;
             }
@@ -587,12 +630,14 @@ PYBIND11_MODULE(fast_finrl_py, m) {
     py::class_<fast_finrl::ReplayBuffer>(m, "ReplayBuffer")
         .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed,
                         std::optional<std::vector<size_t>> action_shape) {
-            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
+            // Default action_shape to (n_tickers,) if not provided
+            std::vector<size_t> shape = action_shape.value_or(
+                std::vector<size_t>{static_cast<size_t>(env->n_tickers())});
             return std::make_unique<fast_finrl::ReplayBuffer>(
                 std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
            py::arg("action_shape") = py::none(),
-           "Create ReplayBuffer. capacity: 100K-5M. seed: 42 for reproducibility. action_shape: None=(n_tickers,), or custom tuple")
+           "Create ReplayBuffer. capacity: 100K-5M. seed: 42 for reproducibility. action_shape: None=(n_tickers,), or custom shape")
         .def("add", [](fast_finrl::ReplayBuffer& self,
                        const py::dict& state,
                        py::array_t<double, py::array::c_style> action_arr,
@@ -1023,7 +1068,9 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
     // Helper: Convert VecFastFinRL::StepResult to list of dicts (json format)
     auto step_result_to_list = [](const fast_finrl::VecFastFinRL::StepResult& result,
-                                   const std::vector<std::vector<std::string>>& tickers_list) -> py::list {
+                                   const std::vector<std::vector<std::string>>& tickers_list,
+                                   const std::vector<std::string>& macro_tickers,
+                                   const std::set<std::string>& indicator_names) -> py::list {
         const int N = result.num_envs;
         const int n_tic = result.n_tickers;
         const int n_ind = result.n_indicators;
@@ -1033,11 +1080,15 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         for (int i = 0; i < N; ++i) {
             py::dict state;
             state["day"] = result.day[i];
+            state["date"] = result.date[i];
             state["cash"] = result.cash[i];
             state["total_asset"] = result.total_asset[i];
             state["done"] = (result.done[i] != 0);
             state["terminal"] = (result.terminal[i] != 0);
             state["reward"] = result.reward[i];
+            state["num_stop_loss"] = result.num_stop_loss[i];
+            state["n_trades"] = result.trades[i];
+            state["loss_cut_amount"] = result.loss_cut_amount[i];
 
             py::array_t<int> shares(n_tic);
             int* shares_ptr = shares.mutable_data();
@@ -1087,7 +1138,15 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                     }
                 }
                 state["macro_indicators"] = macro_ind;
+                state["macro_tickers"] = macro_tickers;
             }
+
+            // indicator_names
+            py::list ind_names;
+            for (const auto& name : indicator_names) {
+                ind_names.append(name);
+            }
+            state["indicator_names"] = ind_names;
 
             states.append(state);
         }
@@ -1097,6 +1156,7 @@ PYBIND11_MODULE(fast_finrl_py, m) {
     // Helper: Convert VecFastFinRL::StepResult to batched dict (vec format)
     auto step_result_to_vec = [](const fast_finrl::VecFastFinRL::StepResult& result,
                                   const std::vector<std::vector<std::string>>& tickers_list,
+                                  const std::vector<std::string>& macro_tickers,
                                   const std::set<std::string>& indicator_names) -> py::dict {
         const int N = result.num_envs;
         const int n_tic = result.n_tickers;
@@ -1131,12 +1191,30 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             terminal_ptr[i] = (result.terminal[i] != 0);
         }
 
+        // num_stop_loss, trades, loss_cut_amount: [N]
+        py::array_t<int> num_stop_loss(shape_1d, stride_int);
+        py::array_t<int> trades(shape_1d, stride_int);
+        py::array_t<double> loss_cut_amount(shape_1d, stride_double);
+        std::memcpy(num_stop_loss.mutable_data(), result.num_stop_loss.data(), N * sizeof(int));
+        std::memcpy(trades.mutable_data(), result.trades.data(), N * sizeof(int));
+        std::memcpy(loss_cut_amount.mutable_data(), result.loss_cut_amount.data(), N * sizeof(double));
+
+        // date: List[str]
+        py::list date_list;
+        for (int i = 0; i < N; ++i) {
+            date_list.append(result.date[i]);
+        }
+
         state["day"] = day;
+        state["date"] = date_list;
         state["cash"] = cash;
         state["total_asset"] = total_asset;
         state["done"] = done;
         state["terminal"] = terminal;
         state["reward"] = reward;
+        state["num_stop_loss"] = num_stop_loss;
+        state["n_trades"] = trades;
+        state["loss_cut_amount"] = loss_cut_amount;
 
         // shares: [N, n_tickers]
         py::array_t<int> shares({N, n_tic});
@@ -1176,6 +1254,8 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             double* m_ind_ptr = macro_ind.mutable_data();
             std::memcpy(m_ind_ptr, result.macro_indicators.data(), N * n_macro * n_ind * sizeof(double));
             state["macro_indicators"] = macro_ind;
+
+            state["macro_tickers"] = macro_tickers;
         }
 
         // Metadata
@@ -1214,22 +1294,15 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          int num_tickers,
                          bool shuffle_tickers,
                          int shifted_start) {
-            fast_finrl::FastFinRLConfig config;
-            config.initial_amount = initial_amount;
-            config.failure_threshold = failure_threshold;
-            config.hmax = hmax;
-            config.buy_cost_pct = buy_cost_pct;
-            config.sell_cost_pct = sell_cost_pct;
-            config.stop_loss_tolerance = stop_loss_tolerance;
-            config.bidding = bidding;
-            config.stop_loss_calculation = stop_loss_calculation;
-            config.initial_seed = initial_seed;
-            config.tech_indicator_list = tech_indicator_list;
-            config.macro_tickers = macro_tickers;
-            config.return_format = parse_return_format(return_format);
-            config.num_tickers = num_tickers;
-            config.shuffle_tickers = shuffle_tickers;
-            return std::make_unique<fast_finrl::VecFastFinRL>(csv_path, n_envs, config, shifted_start);
+            return std::make_unique<fast_finrl::VecFastFinRL>(
+                csv_path, n_envs,
+                initial_amount, failure_threshold, hmax,
+                buy_cost_pct, sell_cost_pct, stop_loss_tolerance,
+                bidding, stop_loss_calculation, initial_seed,
+                tech_indicator_list, macro_tickers,
+                auto_reset, parse_return_format(return_format),
+                num_tickers, shuffle_tickers, shifted_start
+            );
         }),
              py::arg("csv_path"),
              py::arg("n_envs"),
@@ -1271,11 +1344,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             auto result = self.reset(tickers_list, seeds);
             const auto& tickers = self.get_tickers();
+            const auto& macro_tickers = self.get_macro_tickers();
+            const auto& indicator_names = self.get_indicator_names();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers, self.get_indicator_names());
+                return step_result_to_vec(result, tickers, macro_tickers, indicator_names);
             }
-            return step_result_to_list(result, tickers);
+            return step_result_to_list(result, tickers, macro_tickers, indicator_names);
         }, py::arg("tickers_list"), py::arg("seeds"),
            "Reset N environments with explicit tickers and seeds.")
 
@@ -1291,11 +1366,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             auto result = self.reset(tickers_list, seed);
             const auto& tickers = self.get_tickers();
+            const auto& macro_tickers = self.get_macro_tickers();
+            const auto& indicator_names = self.get_indicator_names();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers, self.get_indicator_names());
+                return step_result_to_vec(result, tickers, macro_tickers, indicator_names);
             }
-            return step_result_to_list(result, tickers);
+            return step_result_to_list(result, tickers, macro_tickers, indicator_names);
         }, py::arg("tickers_list") = py::none(), py::arg("seed"),
            "Simplified reset: single seed auto-expands to all envs.")
 
@@ -1304,11 +1381,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
                          fast_finrl::VecFastFinRL& self) -> py::object {
             auto result = self.reset();
             const auto& tickers = self.get_tickers();
+            const auto& macro_tickers = self.get_macro_tickers();
+            const auto& indicator_names = self.get_indicator_names();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers, self.get_indicator_names());
+                return step_result_to_vec(result, tickers, macro_tickers, indicator_names);
             }
-            return step_result_to_list(result, tickers);
+            return step_result_to_list(result, tickers, macro_tickers, indicator_names);
         }, "Reset with no args: keep same tickers, increment seeds.")
 
         // step -> returns list of dicts (json) or single dict (vec)
@@ -1337,11 +1416,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
             const double* actions_ptr = static_cast<const double*>(actions_buf.ptr);
             auto result = self.step(actions_ptr);
             const auto& tickers = self.get_tickers();
+            const auto& macro_tickers = self.get_macro_tickers();
+            const auto& indicator_names = self.get_indicator_names();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers, self.get_indicator_names());
+                return step_result_to_vec(result, tickers, macro_tickers, indicator_names);
             }
-            return step_result_to_list(result, tickers);
+            return step_result_to_list(result, tickers, macro_tickers, indicator_names);
         }, py::arg("actions"),
            "Execute one step. Returns List[dict] (json) or dict (vec) based on return_format.")
 
@@ -1356,11 +1437,13 @@ PYBIND11_MODULE(fast_finrl_py, m) {
 
             auto result = self.reset_indices(indices, seeds);
             const auto& tickers = self.get_tickers();
+            const auto& macro_tickers = self.get_macro_tickers();
+            const auto& indicator_names = self.get_indicator_names();
 
             if (self.return_format() == fast_finrl::ReturnFormat::Vec) {
-                return step_result_to_vec(result, tickers, self.get_indicator_names());
+                return step_result_to_vec(result, tickers, macro_tickers, indicator_names);
             }
-            return step_result_to_list(result, tickers);
+            return step_result_to_list(result, tickers, macro_tickers, indicator_names);
         }, py::arg("indices"), py::arg("seeds"),
            "Reset only specified environment indices.")
 
@@ -1603,21 +1686,25 @@ PYBIND11_MODULE(fast_finrl_py, m) {
         // Constructor from FastFinRL
         .def(py::init([](std::shared_ptr<fast_finrl::FastFinRL> env, size_t capacity, size_t batch_size, int64_t seed,
                         std::optional<std::vector<size_t>> action_shape) {
-            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
+            // Default action_shape to (n_tickers,) if not provided
+            std::vector<size_t> shape = action_shape.value_or(
+                std::vector<size_t>{static_cast<size_t>(env->n_tickers())});
             return std::make_unique<fast_finrl::VecReplayBuffer>(
                 std::const_pointer_cast<const fast_finrl::FastFinRL>(env), capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
            py::arg("action_shape") = py::none(),
-           "Create VecReplayBuffer from FastFinRL. action_shape: None=(n_tickers,), or custom tuple")
+           "Create VecReplayBuffer from FastFinRL. action_shape: None=(n_tickers,), or custom shape")
 
         // Constructor from VecFastFinRL
         .def(py::init([](fast_finrl::VecFastFinRL& env, size_t capacity, size_t batch_size, int64_t seed,
                         std::optional<std::vector<size_t>> action_shape) {
-            std::vector<size_t> shape = action_shape.value_or(std::vector<size_t>{});
+            // Default action_shape to (n_tickers,) if not provided
+            std::vector<size_t> shape = action_shape.value_or(
+                std::vector<size_t>{static_cast<size_t>(env.n_tickers())});
             return std::make_unique<fast_finrl::VecReplayBuffer>(env, capacity, batch_size, seed, shape);
         }), py::arg("env"), py::arg("capacity") = 1000000, py::arg("batch_size") = 256, py::arg("seed") = 42,
            py::arg("action_shape") = py::none(),
-           "Create VecReplayBuffer from VecFastFinRL. action_shape: None=(n_tickers,), or custom tuple")
+           "Create VecReplayBuffer from VecFastFinRL. action_shape: None=(n_tickers,), or custom shape")
 
         // add_transition - add single transition (for testing)
         .def("add_transition", [](fast_finrl::VecReplayBuffer& self,

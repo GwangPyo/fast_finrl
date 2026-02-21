@@ -15,6 +15,7 @@ public:
     // Step result containing all per-environment data (SoA layout)
     struct StepResult {
         vector<int> day;                    // [N]
+        vector<string> date;                // [N] - date string
         vector<double> cash;                // [N]
         vector<int> shares;                 // [N * n_tickers]
         vector<double> avg_buy_price;       // [N * n_tickers]
@@ -26,16 +27,36 @@ public:
         vector<uint8_t> done;               // [N] (not bool - pybind11 issue)
         vector<uint8_t> terminal;           // [N] (not bool - pybind11 issue)
         vector<double> total_asset;         // [N]
+        vector<int> num_stop_loss;          // [N] - stop loss count per env
+        vector<int> trades;                 // [N] - trade count per env
+        vector<double> loss_cut_amount;     // [N] - stop loss amount per env
         int num_envs = 0;
         int n_tickers = 0;
         int n_indicators = 0;
         int n_macro = 0;
     };
 
-    // Constructor
-    // n_envs: number of parallel environments (required, must be > 0)
-    // shifted_start: minimum start day offset for history window (default 5)
-    explicit VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config = FastFinRLConfig{}, int shifted_start = 5);
+    // Constructor - all parameters passed directly, no config struct
+    explicit VecFastFinRL(
+        const string& csv_path,
+        int n_envs,
+        double initial_amount,
+        double failure_threshold,
+        int hmax,
+        double buy_cost_pct,
+        double sell_cost_pct,
+        double stop_loss_tolerance,
+        const string& bidding,
+        const string& stop_loss_calculation,
+        int64_t initial_seed,
+        const vector<string>& tech_indicator_list,
+        const vector<string>& macro_tickers,
+        bool auto_reset,
+        ReturnFormat return_format,
+        int num_tickers,
+        bool shuffle_tickers,
+        int shifted_start
+    );
 
     // Core API
     // Full reset with explicit tickers and seeds
@@ -79,9 +100,17 @@ public:
     // Get current state for all environments as list of JSON
     vector<nlohmann::json> get_state() const;
 
-    // Configuration (read-only after construction)
-    const FastFinRLConfig& config() const { return config_; }
+    // Configuration accessors (read-only after construction)
     bool auto_reset() const { return auto_reset_; }
+    double initial_amount() const { return initial_amount_; }
+    double failure_threshold() const { return failure_threshold_; }
+    int hmax() const { return hmax_; }
+    double buy_cost_pct() const { return buy_cost_pct_; }
+    double sell_cost_pct() const { return sell_cost_pct_; }
+    double stop_loss_tolerance() const { return stop_loss_tolerance_; }
+    const string& bidding() const { return bidding_; }
+    const string& stop_loss_calculation() const { return stop_loss_calculation_; }
+    bool shuffle_tickers() const { return shuffle_tickers_; }
 
     // Public read-only members
     int shifted_start = 0;  // start day offset for history window
@@ -89,13 +118,24 @@ public:
 private:
     // Base environment for shared market data
     shared_ptr<FastFinRL> base_env_;
-    FastFinRLConfig config_;
-    bool auto_reset_ = true;
-    ReturnFormat return_format_ = ReturnFormat::Json;
+
+    // Configuration (stored directly, no config struct)
+    double initial_amount_;
+    double failure_threshold_;
+    int hmax_;
+    double buy_cost_pct_;
+    double sell_cost_pct_;
+    double stop_loss_tolerance_;
+    string bidding_;
+    string stop_loss_calculation_;
+    bool shuffle_tickers_;
+    bool auto_reset_;
+    ReturnFormat return_format_;
 
     // Environment dimensions
     int num_envs_ = 0;
-    int n_tickers_ = 0;
+    int num_tickers_config_ = 0;  // Original user setting (0 = all tickers)
+    int n_tickers_ = 0;           // Actual ticker count after initialization
     int n_indicators_ = 0;
     int n_macro_ = 0;
     int max_day_ = 0;
@@ -118,6 +158,7 @@ private:
     vector<int> num_stop_loss_;                   // [N]
     vector<int> trades_;                          // [N]
     vector<double> begin_total_asset_;            // [N]
+    vector<double> loss_cut_amount_;              // [N] - stop loss amount
 
     // Pre-allocated output buffer
     StepResult buffer_;

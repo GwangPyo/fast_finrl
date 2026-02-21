@@ -217,6 +217,14 @@ string FastFinRL::get_date() const {
     return col_date_->get()[active_row_indices_[0]];
 }
 
+string FastFinRL::get_date_at_day_idx(int day_idx) const {
+    // Use any ticker from all_tickers_ to find row index for the day
+    // (all_tickers_ is always populated, unlike active_tickers_ which requires reset())
+    const string& tic = *all_tickers_.begin();
+    size_t row_idx = find_row_index(tic, day_idx);
+    return col_date_->get()[row_idx];
+}
+
 double FastFinRL::calculate_total_asset() const {
     double total = cash_;
     for (size_t i = 0; i < shares_.size(); ++i) {

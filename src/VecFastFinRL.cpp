@@ -10,27 +10,71 @@ namespace fast_finrl {
 // Large prime for seed generation (10^6th prime)
 static constexpr int64_t SEED_PRIME = 15485863LL;
 
-VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLConfig& config, int shifted_start)
-    : config_(config)
-    , auto_reset_(true)
-    , return_format_(config.return_format)
+VecFastFinRL::VecFastFinRL(
+    const string& csv_path,
+    int n_envs,
+    double initial_amount,
+    double failure_threshold,
+    int hmax,
+    double buy_cost_pct,
+    double sell_cost_pct,
+    double stop_loss_tolerance,
+    const string& bidding,
+    const string& stop_loss_calculation,
+    int64_t initial_seed,
+    const vector<string>& tech_indicator_list,
+    const vector<string>& macro_tickers,
+    bool auto_reset,
+    ReturnFormat return_format,
+    int num_tickers,
+    bool shuffle_tickers,
+    int shifted_start)
+    : initial_amount_(initial_amount)
+    , failure_threshold_(failure_threshold)
+    , hmax_(hmax)
+    , buy_cost_pct_(buy_cost_pct)
+    , sell_cost_pct_(sell_cost_pct)
+    , stop_loss_tolerance_(stop_loss_tolerance)
+    , bidding_(bidding)
+    , stop_loss_calculation_(stop_loss_calculation)
+    , shuffle_tickers_(shuffle_tickers)
+    , auto_reset_(auto_reset)
+    , return_format_(return_format)
     , num_envs_(n_envs)
-    , last_base_seed_(config.initial_seed)
+    , num_tickers_config_(num_tickers)
+    , last_base_seed_(initial_seed)
     , shifted_start(shifted_start)
 {
     if (n_envs <= 0) {
         throw runtime_error("n_envs must be > 0");
     }
 
+    // Create config for base_env (FastFinRL still uses config)
+    FastFinRLConfig config;
+    config.initial_amount = initial_amount;
+    config.failure_threshold = failure_threshold;
+    config.hmax = hmax;
+    config.buy_cost_pct = buy_cost_pct;
+    config.sell_cost_pct = sell_cost_pct;
+    config.stop_loss_tolerance = stop_loss_tolerance;
+    config.bidding = bidding;
+    config.stop_loss_calculation = stop_loss_calculation;
+    config.initial_seed = initial_seed;
+    config.tech_indicator_list = tech_indicator_list;
+    config.macro_tickers = macro_tickers;
+    config.return_format = return_format;
+    config.num_tickers = num_tickers;
+    config.shuffle_tickers = shuffle_tickers;
+
     // Create base environment for shared market data
     base_env_ = make_shared<FastFinRL>(csv_path, config);
     max_day_ = base_env_->get_max_day();
     n_indicators_ = static_cast<int>(base_env_->get_indicator_names().size());
-    n_macro_ = static_cast<int>(config.macro_tickers.size());
+    n_macro_ = static_cast<int>(macro_tickers.size());
 
     // Initialize n_tickers based on config (before reset)
-    if (config.num_tickers > 0) {
-        n_tickers_ = config.num_tickers;
+    if (num_tickers > 0) {
+        n_tickers_ = num_tickers;
     } else {
         n_tickers_ = static_cast<int>(base_env_->get_all_tickers().size());
     }
@@ -40,22 +84,22 @@ VecFastFinRL::VecFastFinRL(const string& csv_path, int n_envs, const FastFinRLCo
     vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
     sort(all_tics.begin(), all_tics.end());
 
-    if (config.num_tickers > 0) {
-        if (config.shuffle_tickers) {
+    if (num_tickers > 0) {
+        if (shuffle_tickers) {
             // Shuffle with initial_seed for each env
             for (int i = 0; i < num_envs_; ++i) {
                 vector<string> candidates = all_tics;
-                int64_t env_seed = (config.initial_seed * (i + 1) * SEED_PRIME) % (SEED_PRIME - 1);
+                int64_t env_seed = (initial_seed * (i + 1) * SEED_PRIME) % (SEED_PRIME - 1);
                 mt19937 rng(static_cast<unsigned int>(env_seed));
                 shuffle(candidates.begin(), candidates.end(), rng);
-                int n = min(config.num_tickers, static_cast<int>(candidates.size()));
+                int n = min(num_tickers, static_cast<int>(candidates.size()));
                 vector<string> selected(candidates.begin(), candidates.begin() + n);
                 sort(selected.begin(), selected.end());
                 tickers_.push_back(selected);
             }
         } else {
             // Fixed first N tickers (alphabetical)
-            int n = min(config.num_tickers, static_cast<int>(all_tics.size()));
+            int n = min(num_tickers, static_cast<int>(all_tics.size()));
             vector<string> selected(all_tics.begin(), all_tics.begin() + n);
             tickers_.assign(num_envs_, selected);
         }
@@ -123,8 +167,8 @@ void VecFastFinRL::init_bid_options() {
     buy_bid_options_["deterministic"] = default_fn;
 
     // Cache active bid functions
-    active_sell_bid_ = &sell_bid_options_.at(config_.bidding);
-    active_buy_bid_ = &buy_bid_options_.at(config_.bidding);
+    active_sell_bid_ = &sell_bid_options_.at(bidding_);
+    active_buy_bid_ = &buy_bid_options_.at(bidding_);
 }
 
 VecFastFinRL::StepResult VecFastFinRL::reset(
@@ -149,19 +193,19 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
 
     for (int i = 0; i < num_envs_; ++i) {
         if (tickers_list[i].empty()) {
-            if (config_.num_tickers > 0) {
-                if (config_.shuffle_tickers) {
+            if (num_tickers_config_ > 0) {
+                if (shuffle_tickers_) {
                     // Shuffle and select num_tickers (each env different)
                     vector<string> candidates = all_tics;
                     mt19937 rng(static_cast<unsigned int>(seeds[i]));
                     shuffle(candidates.begin(), candidates.end(), rng);
-                    int n = min(config_.num_tickers, static_cast<int>(candidates.size()));
+                    int n = min(num_tickers_config_, static_cast<int>(candidates.size()));
                     vector<string> selected(candidates.begin(), candidates.begin() + n);
                     sort(selected.begin(), selected.end());
                     effective_tickers_list[i] = selected;
                 } else {
                     // First num_tickers alphabetically (all envs same)
-                    int n = min(config_.num_tickers, static_cast<int>(all_tics.size()));
+                    int n = min(num_tickers_config_, static_cast<int>(all_tics.size()));
                     vector<string> selected(all_tics.begin(), all_tics.begin() + n);
                     effective_tickers_list[i] = selected;
                 }
@@ -206,6 +250,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     num_stop_loss_.resize(num_envs_, 0);
     trades_.resize(num_envs_, 0);
     begin_total_asset_.resize(num_envs_, 0.0);
+    loss_cut_amount_.resize(num_envs_, 0.0);
 
     // Allocate output buffer
     buffer_.num_envs = num_envs_;
@@ -214,6 +259,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     buffer_.n_macro = n_macro_;
 
     buffer_.day.resize(num_envs_);
+    buffer_.date.resize(num_envs_);
     buffer_.cash.resize(num_envs_);
     buffer_.shares.resize(num_envs_ * n_tickers_);
     buffer_.avg_buy_price.resize(num_envs_ * n_tickers_);
@@ -223,6 +269,9 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     buffer_.done.resize(num_envs_, false);
     buffer_.terminal.resize(num_envs_, false);
     buffer_.total_asset.resize(num_envs_);
+    buffer_.num_stop_loss.resize(num_envs_, 0);
+    buffer_.trades.resize(num_envs_, 0);
+    buffer_.loss_cut_amount.resize(num_envs_, 0.0);
 
     if (n_macro_ > 0) {
         buffer_.macro_open.resize(num_envs_ * n_macro_);
@@ -261,7 +310,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset(
     // Use previous tickers if tickers_list is empty (unless shuffle_tickers is enabled)
     vector<vector<string>> effective_tickers_list = tickers_list;
     if (tickers_list.empty()) {
-        if (config_.shuffle_tickers) {
+        if (shuffle_tickers_) {
             // Empty vectors trigger shuffle in full reset
             effective_tickers_list.assign(num_envs_, vector<string>{});
         } else if (!tickers_.empty()) {
@@ -282,7 +331,7 @@ VecFastFinRL::StepResult VecFastFinRL::reset() {
     // Otherwise keep same tickers
     vector<vector<string>> tickers_to_use;
 
-    if (config_.shuffle_tickers || tickers_.empty()) {
+    if (shuffle_tickers_ || tickers_.empty()) {
         // Empty lists -> will be filled by shuffle or use all
         tickers_to_use.assign(num_envs_, vector<string>{});
     } else {
@@ -302,13 +351,13 @@ void VecFastFinRL::reset_single_env(size_t env_idx, int64_t seed, const vector<s
     if (!tickers.empty()) {
         // Explicit tickers provided
         tickers_[env_idx] = tickers;
-    } else if (config_.shuffle_tickers) {
+    } else if (shuffle_tickers_) {
         // Shuffle enabled - select new random tickers
         const auto& all_tickers_set = base_env_->get_all_tickers();
         vector<string> all_tics(all_tickers_set.begin(), all_tickers_set.end());
         sort(all_tics.begin(), all_tics.end());
         shuffle(all_tics.begin(), all_tics.end(), rngs_[env_idx]);
-        int n = min(n_tickers_, static_cast<int>(all_tics.size()));
+        int n = (num_tickers_config_ > 0) ? min(num_tickers_config_, static_cast<int>(all_tics.size())) : static_cast<int>(all_tics.size());
         tickers_[env_idx] = vector<string>(all_tics.begin(), all_tics.begin() + n);
         sort(tickers_[env_idx].begin(), tickers_[env_idx].end());
     }
@@ -354,7 +403,7 @@ void VecFastFinRL::reset_single_env(size_t env_idx, int64_t seed, const vector<s
     day_[env_idx] = dist(rngs_[env_idx]);
 
     // Initialize portfolio
-    cash_[env_idx] = config_.initial_amount;
+    cash_[env_idx] = initial_amount_;
     size_t base_idx = env_idx * n_tickers_;
     for (int t = 0; t < n_tickers_; ++t) {
         shares_[base_idx + t] = 0;
@@ -364,11 +413,15 @@ void VecFastFinRL::reset_single_env(size_t env_idx, int64_t seed, const vector<s
     // Reset episode tracking
     num_stop_loss_[env_idx] = 0;
     trades_[env_idx] = 0;
+    loss_cut_amount_[env_idx] = 0.0;
 
     // Output
     buffer_.done[env_idx] = 0;
     buffer_.terminal[env_idx] = 0;
     buffer_.reward[env_idx] = 0.0;
+    buffer_.num_stop_loss[env_idx] = 0;
+    buffer_.trades[env_idx] = 0;
+    buffer_.loss_cut_amount[env_idx] = 0.0;
 
     // Fill observations
     fill_obs(env_idx);
@@ -379,7 +432,10 @@ void VecFastFinRL::fill_obs(size_t env_idx) {
     size_t base_idx = env_idx * n_tickers_;
 
     buffer_.day[env_idx] = day;
+    buffer_.date[env_idx] = base_env_->get_date_at_day_idx(day);
     buffer_.cash[env_idx] = cash_[env_idx];
+    buffer_.trades[env_idx] = trades_[env_idx];
+    buffer_.loss_cut_amount[env_idx] = loss_cut_amount_[env_idx];
 
     // Copy shares and avg_buy_price
     for (int t = 0; t < n_tickers_; ++t) {
@@ -458,7 +514,7 @@ int VecFastFinRL::sell_stock(const size_t env_idx, const size_t ticker_idx, int 
 
     int sell_num = min(action, shares_[idx]);
     double price = (*active_sell_bid_)(env_idx, ticker_idx);
-    double sell_amount = price * sell_num * (1.0 - config_.sell_cost_pct);
+    double sell_amount = price * sell_num * (1.0 - sell_cost_pct_);
 
     cash_[env_idx] += sell_amount;
     shares_[idx] -= sell_num;
@@ -477,13 +533,13 @@ int VecFastFinRL::buy_stock(size_t env_idx, size_t ticker_idx, int action) {
 
     if (price <= 0) return 0;
 
-    int available = static_cast<int>(cash_[env_idx] / (price * (1.0 + config_.buy_cost_pct)));
+    int available = static_cast<int>(cash_[env_idx] / (price * (1.0 + buy_cost_pct_)));
     int buy_num = min(available, action);
 
     if (buy_num <= 0) return 0;
 
     double prev_total = shares_[idx] * avg_buy_price_[idx];
-    double buy_amount = price * buy_num * (1.0 + config_.buy_cost_pct);
+    double buy_amount = price * buy_num * (1.0 + buy_cost_pct_);
 
     cash_[env_idx] -= buy_amount;
     shares_[idx] += buy_num;
@@ -506,13 +562,17 @@ void VecFastFinRL::check_stop_loss(size_t env_idx) {
 
         const string& tic = tickers_[env_idx][t];
         double price;
-        if (config_.stop_loss_calculation == "close") {
+        if (stop_loss_calculation_ == "close") {
             price = base_env_->get_raw_value(tic, day, "close");
         } else {
             price = base_env_->get_raw_value(tic, day, "low");
         }
 
-        if (price < avg_buy_price_[idx] * config_.stop_loss_tolerance) {
+        if (price < avg_buy_price_[idx] * stop_loss_tolerance_) {
+            // Calculate loss before selling (negative = loss)
+            double loss = (price - avg_buy_price_[idx]) * shares_[idx];
+            loss_cut_amount_[env_idx] += abs(loss);
+
             sell_stock(env_idx, t, shares_[idx]);
             num_stop_loss_[env_idx]++;
         }
@@ -571,7 +631,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
     // 2. Scale actions
     vector<int> scaled_actions(n_tickers_);
     for (int t = 0; t < n_tickers_; ++t) {
-        scaled_actions[t] = static_cast<int>(actions[t] * config_.hmax);
+        scaled_actions[t] = static_cast<int>(actions[t] * hmax_);
     }
 
     // 3. Separate sell/buy
@@ -614,9 +674,10 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
 
     // 11. Check terminal conditions
     bool terminal = (day_[env_idx] >= max_day_ - 1);
-    bool done = (end_asset <= config_.failure_threshold) || terminal;
+    bool done = (end_asset <= failure_threshold_) || terminal;
     buffer_.terminal[env_idx] = terminal ? 1 : 0;
     buffer_.done[env_idx] = done ? 1 : 0;
+    buffer_.num_stop_loss[env_idx] = num_stop_loss_[env_idx];
 
     // 12. Auto-reset if done
     if (auto_reset_ && done) {
@@ -624,7 +685,7 @@ void VecFastFinRL::step_env(size_t env_idx, const double* actions) {
         // Restore done=True so user sees the episode ended
         buffer_.done[env_idx] = 1;
     }
-    
+
     // 13. Fill observation
     fill_obs(env_idx);
 }

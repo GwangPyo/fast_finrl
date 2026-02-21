@@ -68,6 +68,7 @@ public:
     set<string> get_indicator_names() const;
     set<string> get_all_tickers() const { return all_tickers_; }
     int get_max_day() const { return max_day_; }
+    string get_date_at_day_idx(int day_idx) const;
     nlohmann::json get_state() const;
     double get_raw_value(const string& ticker, int day, const string& column) const;
     const vector<string>& get_macro_tickers() const { return macro_tickers_; }
